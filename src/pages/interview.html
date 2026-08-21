@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FONKON 客户访谈</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 20px}button{padding:12px 20px;border:0;border-radius:8px;cursor:pointer}.card{border:1px solid #ddd;border-radius:12px;padding:24px;margin:16px 0}input,textarea{width:100%;padding:12px;margin:8px 0 16px;box-sizing:border-box}.muted{color:#666}.score{font-size:32px;font-weight:700}</style></head>
+<body>
+<h1>FONKON 客户访谈</h1>
+<div class="muted" id="progress"></div>
+<div class="card"><h2 id="stage">开场</h2><p id="question"></p><textarea id="answer" rows="5" placeholder="记录客户原话/数据"></textarea><button id="next">保存并下一步</button></div>
+<div class="card" id="result" hidden><h2>评分结果</h2><div class="score" id="cv"></div><p id="grade"></p><p id="ot"></p><p id="pi"></p><p id="aq"></p><p id="warning"></p><p id="action"></p></div>
+<script>
+const flow=[['opening','开场','您目前主要做哪些进口水果？','core_fruit'],['volume','业务规模','一年大概进口多少柜？其中哪个品类最多？','annual_import_containers'],['port','口岸与路线','现在主要走哪个口岸？为什么选择这个口岸？','current_port'],['process','业务过程','正常从到港到放行大概需要几天？查验或送检时会增加多少？','clearance_days'],['pain','痛点量化','这种情况一个月大概发生几次？每次影响几天？一柜大概损失多少？','pain_metrics'],['hypothesis','假设验证','我先做一个判断：您现在更在意通关稳定性而不只是价格，对吗？','hypothesis_result'],['payment','支付意愿','如果这个问题能够被稳定解决，您觉得每柜增加多少服务成本可以接受？','willingness_to_pay'],['trial','机会验证','如果先从1到3柜做一次对比测试，您愿意尝试吗？','first_trial_containers'],['decision','决策与下一步','下一批货大概什么时候？最终由谁决定？','project_and_decision']];
+let i=0; const answers={};
+function render(){const x=flow[i];document.querySelector('#stage').textContent=x[1];document.querySelector('#question').textContent=x[2];document.querySelector('#answer').value='';document.querySelector('#progress').textContent=`第 ${i+1} / ${flow.length} 步`;}
+document.querySelector('#next').onclick=async()=>{answers[flow[i][3]]=document.querySelector('#answer').value;i++;if(i<flow.length)return render();
+ document.querySelector('#next').disabled=true; document.querySelector('#result').hidden=false; document.querySelector('#cv').textContent='访谈完成'; document.querySelector('#grade').textContent='数据已提交后台评分引擎'; document.querySelector('#ot').textContent='请等待评分结果';
+ try{const r=await fetch('/api/v1/interviews',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({answers})});if(!r.ok)throw Error('submit failed')}catch(e){document.querySelector('#action').textContent='当前仅完成前端访谈流，API地址需在部署时配置。'}};
+render();
+</script></body></html>

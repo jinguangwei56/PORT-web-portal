@@ -1,0 +1,27 @@
+/* FONKON Market OS 1.2 strict patch: two-level permissions + delta opportunity engine */
+function isManager(){return profile?.role==='admin'}
+function showApp(){
+  if(!ses||!profile){$('#auth').classList.remove('hide');$('#app').classList.add('hide');return}
+  if(!profile.active){clearSession();$('#auth').classList.remove('hide');$('#app').classList.add('hide');$('#authMsg').textContent='账号已被最高权限停用';return}
+  $('#auth').classList.add('hide');$('#app').classList.remove('hide');
+  $('#who').innerHTML='<b>'+esc(profile.name||ses.user.email)+'</b> · '+(profile.role==='admin'?'最高权限':'业务员');
+  $$('[data-view="manager"],[data-view="team"],[data-view="settings"]').forEach(b=>b.style.display=isManager()?'':'none');
+  const mb=document.querySelector('[data-view="manager"] span:last-child'); if(mb)mb.textContent='最高权限看板';
+  render('dashboard');
+}
+const _strictLoadProfile=loadProfile;
+loadProfile=async function(){await _strictLoadProfile();if(!profile?.active)throw Error('账号未激活或已被最高权限停用')}
+
+async function toggleSalesActive(id,newActive){
+  try{
+    await req('/rest/v1/rpc/fonkon_admin_set_sales_active',{method:'POST',body:JSON.stringify({target_user:id,new_active:newActive})});
+    await refreshAll();toast(newActive?'业务员账号已恢复':'业务员账号已停用');teamView();
+  }catch(e){toast(e.message)}
+}
+function teamView(){
+  if(!isManager()){$('#view').innerHTML=pageHead('团队账号','仅最高权限账号可使用。')+'<div class="card empty">无权限</div>';return}
+  $('#view').innerHTML=pageHead('团队账号','两级权限：最高权限 + 业务员。业务员只能读取和操作自己的客户数据。')+
+  '<div class="two"><div class="card card-pad"><div class="section-title"><h2>生成业务员邀请码</h2></div><div class="notice">邀请码7天有效、一次性使用。新账号固定为业务员，不能自行升级权限。</div><button id="makeInvite" class="btn btn-primary">生成业务员邀请码</button><div id="inviteResult" class="notice hide" style="margin-top:10px"></div></div><div class="card card-pad"><div class="section-title"><h2>团队成员</h2><span class="hint">停用后数据库立即拒绝该业务员访问业务数据</span></div>'+
+  profiles.map(p=>'<div class="rank"><div class="rank-no">'+(p.name||'?').slice(0,1)+'</div><div class="rank-main"><b>'+esc(p.name||'未命名')+'</b><div>'+(p.role==='admin'?'最高权限':'业务员')+' · '+(p.active?'启用':'停用')+'</div></div><div class="rank-val">'+(p.role==='sales'?'<button class="btn btn-soft" onclick="toggleSalesActive(\''+p.id+'\','+(!p.active)+')">'+(p.active?'停用':'恢复')+'</button>':'最高权限固定')+'</div></div>').join('')+'</div></div>';
+  $('#makeInvite').onclick=async()=>{try{const x=await edge({action:'invite',role:'sales'});$('#inviteResult').classList.remove('hide');$('#inviteResult').textContent='业务员邀请码：'+x.code+'（7天内有效，一次性使用）'}catch(e){toast(e.message)}};
+}

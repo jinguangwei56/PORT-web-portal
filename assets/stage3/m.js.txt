@@ -1,0 +1,17 @@
+/* FONKON R8B: session diagnostics in system self-check */
+(function(){
+ const baseSelf=window.systemSelfCheckView;
+ if(typeof baseSelf!=='function')return;
+ window.systemSelfCheckView=async function(){
+   if(typeof fonkonHealSession==='function')await fonkonHealSession('selfcheck');
+   await baseSelf();
+   if(profile?.role!=='admin')return;
+   const box=document.querySelector('#selfCheckBody');if(!box)return;
+   const s=typeof fonkonSessionStatus==='function'?fonkonSessionStatus():{};
+   let userOk=false,profileOk=false,userErr='',profileErr='';
+   try{await req('/auth/v1/user');userOk=true}catch(e){userErr=e.message}
+   try{const a=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(ses?.user?.id||'')+'&select=id,role,active,approval_status');profileOk=!!a?.[0]&&a[0].role==='admin'&&a[0].active&&a[0].approval_status==='approved';if(!profileOk)profileErr='当前档案未满足 admin + active + approved'}catch(e){profileErr=e.message}
+   const mins=s.remainingSeconds==null?'-':Math.max(0,Math.floor(s.remainingSeconds/60));
+   box.insertAdjacentHTML('beforeend','<div class="knowledge-block section"><h3>登录会话 / 最高权限</h3><div class="knowledge-row">'+(s.hasSession?'✅':'❌')+' 本地会话'+(s.hasRefreshToken?' · ✅ Refresh Token':' · ❌ 无 Refresh Token')+'</div><div class="knowledge-row">'+(s.valid?'✅':'❌')+' Access Token'+(mins==='-'?'':' · 约剩 '+mins+' 分钟')+'</div><div class="knowledge-row">'+(userOk?'✅':'❌')+' Auth 用户接口'+(userErr?'<div class="muted">'+esc(userErr)+'</div>':'')+'</div><div class="knowledge-row">'+(profileOk?'✅':'❌')+' 最高权限档案'+(profileErr?'<div class="muted">'+esc(profileErr)+'</div>':'')+'</div><div class="muted" style="margin-top:8px">R8 会在令牌临近过期、API返回401、页面重新获得焦点时自动续期。只有 Refresh Token 也失效时才要求重新登录。</div></div>');
+ };
+})();

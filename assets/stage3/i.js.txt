@@ -1,0 +1,6 @@
+/* FONKON R5 release label pin - bounded, no observer */
+(function(){
+ function pin(){try{const tm=document.querySelector('.top-meta');if(tm&&window.innerWidth<=700&&tm.textContent!=='Market OS · 完整稳定版 R5')tm.textContent='Market OS · 完整稳定版 R5';const b=document.querySelector('#releaseBadge');if(b&&b.textContent!=='R5')b.textContent='R5'}catch(e){console.warn('release label pin skipped',e)}}
+ [100,800,1600,3000].forEach(ms=>setTimeout(pin,ms));
+ window.addEventListener('resize',()=>setTimeout(pin,160));
+})();

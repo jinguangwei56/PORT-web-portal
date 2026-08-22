@@ -1,0 +1,96 @@
+/* FONKON R8: durable Supabase auth session auto-refresh */
+(function(){
+ let refreshPromise=null;
+ function jwtExp(token){try{const p=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));return Number(p.exp||0)}catch{return 0}}
+ function sessionExp(){return Number(ses?.expires_at||jwtExp(ses?.access_token)||0)}
+ function persistSession(x){
+   if(!x)return;
+   const old=ses||{};
+   ses=Object.assign({},old,x);
+   if(!ses.user&&old.user)ses.user=old.user;
+   if(!ses.refresh_token&&old.refresh_token)ses.refresh_token=old.refresh_token;
+   localStorage.setItem('fonkon_session',JSON.stringify(ses));
+ }
+ async function refreshSession(force=false){
+   if(!ses)return null;
+   const exp=sessionExp(), now=Math.floor(Date.now()/1000);
+   if(!force&&exp&&exp-now>300)return ses;
+   if(!ses.refresh_token)throw Error('登录会话已过期，请重新登录');
+   if(refreshPromise)return refreshPromise;
+   refreshPromise=(async()=>{
+     const r=await fetch(U+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({refresh_token:ses.refresh_token})});
+     const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch{j=null}
+     if(!r.ok||!j?.access_token)throw Error(j?.error_description||j?.message||j?.error||'登录续期失败，请重新登录');
+     persistSession(j);
+     return ses;
+   })().finally(()=>{refreshPromise=null});
+   return refreshPromise;
+ }
+ window.fonkonRefreshSession=refreshSession;
+ window.fonkonSessionStatus=function(){const exp=sessionExp(),remain=exp?exp-Math.floor(Date.now()/1000):null;return {hasSession:!!ses,hasRefreshToken:!!ses?.refresh_token,expiresAt:exp||null,remainingSeconds:remain,valid:!!ses?.access_token&&(!remain||remain>0)}};
+
+ async function authHeaders(extra={}){
+   if(ses)await refreshSession(false);
+   const h=Object.assign({apikey:K,'content-type':'application/json'},extra||{});
+   if(ses?.access_token)h.authorization='Bearer '+ses.access_token;
+   return h;
+ }
+ async function parseResponse(r){const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch{j=t}return j}
+
+ window.req=async function(path,opt={}){
+   const isAuthToken=path.startsWith('/auth/v1/token');
+   const doFetch=async()=>{
+     const h=isAuthToken?Object.assign({apikey:K,'content-type':'application/json'},opt.headers||{}):await authHeaders(opt.headers||{});
+     return fetch(U+path,Object.assign({},opt,{headers:h}));
+   };
+   let r=await doFetch();
+   if(!isAuthToken&&r.status===401&&ses?.refresh_token){
+     await refreshSession(true);
+     r=await doFetch();
+   }
+   const j=await parseResponse(r);
+   if(!r.ok)throw Error(j?.message||j?.error_description||j?.error||('HTTP '+r.status));
+   return j;
+ };
+
+ window.edge=async function(body){
+   const doFetch=async()=>fetch(FN,{method:'POST',headers:await authHeaders(),body:JSON.stringify(body)});
+   let r=await doFetch();
+   if(r.status===401&&ses?.refresh_token){await refreshSession(true);r=await doFetch()}
+   const j=await parseResponse(r);
+   if(!r.ok)throw Error(j?.error||j?.message||'操作失败');
+   return j;
+ };
+
+ async function healSession(reason){
+   if(!ses)return false;
+   try{
+     await refreshSession(false);
+     if(typeof fonkonRefreshMyProfile==='function')await fonkonRefreshMyProfile();
+     return true;
+   }catch(e){
+     console.warn('FONKON session heal failed',reason,e);
+     const msg=e?.message||'登录状态已失效';
+     if(/refresh|expired|过期|登录|token|session/i.test(msg)){
+       try{clearSession()}catch{}
+       try{showApp()}catch{}
+       try{const m=document.getElementById('authMsg');if(m)m.textContent='登录会话已过期，请重新登录。'}catch{}
+     }
+     return false;
+   }
+ }
+ window.fonkonHealSession=healSession;
+
+ // Run once after all legacy modules have loaded, then keep the session alive.
+ setTimeout(()=>healSession('startup'),120);
+ setInterval(()=>{if(document.visibilityState==='visible')healSession('timer')},240000);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')healSession('visibility')});
+ window.addEventListener('focus',()=>healSession('focus'));
+
+ // Make logout explicit and complete.
+ const oldClear=window.clearSession||clearSession;
+ window.clearSession=function(){try{oldClear()}finally{refreshPromise=null}};
+
+ function pin(){try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 会话稳定版 · R8';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R8'}catch{}}
+ [100,600,1800].forEach(ms=>setTimeout(pin,ms));
+})();

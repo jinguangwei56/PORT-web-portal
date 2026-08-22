@@ -1,0 +1,13 @@
+/* FONKON R11 final convergence guard: preserve security UX and ensure one visible runtime owner. */
+(function(){
+  'use strict';
+  const S={passwordPrompted:false};
+  function polish(){try{if(typeof window.__r11MobilePolish==='function')window.__r11MobilePolish()}catch(e){console.warn('[R11] mobile polish',e)}}
+  function lockLegacyClicks(){try{Array.from(document.querySelectorAll('.nav-btn,.bottom-nav button')).forEach(b=>{b.onclick=null;b.removeAttribute('onclick')})}catch(e){console.warn('[R11] click lock',e)}}
+  function forcePassword(){try{if(profile?.force_password_change&&!S.passwordPrompted&&typeof window.passwordModal==='function'){S.passwordPrompted=true;Promise.resolve().then(()=>window.passwordModal(true))}}catch(e){console.error('[R11] force password',e)}}
+  const baseShow=window.showApp;
+  window.showApp=function(){const r=baseShow?.();lockLegacyClicks();polish();forcePassword();return r};
+  const logout=document.querySelector('#logout');if(logout){const baseLogout=logout.onclick;logout.onclick=e=>{S.passwordPrompted=false;return baseLogout?.call(logout,e)}}
+  window.fonkonR11Finalize=function(){lockLegacyClicks();polish();forcePassword();try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 市场作战体系 · R11 稳定收口 / ROUTE1';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R11'}catch{}};
+  setTimeout(window.fonkonR11Finalize,0);
+})();

@@ -1,0 +1,53 @@
+ient(135deg,#082f49,#0f766e);color:#fff;border-radius:18px;padding:18px;margin-bottom:12px}.detail-hero .muted{color:#bae6fd}.detail-title{font-size:23px;font-weight:950}.detail-meta{font-size:12px;color:#dbeafe;margin-top:5px}.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.detail-actions .btn-soft{background:rgba(255,255,255,.12);color:#fff}.chip{display:inline-block;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;font-size:10px;margin:2px}.missing-list{display:flex;gap:6px;flex-wrap:wrap}.missing-list span{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;border-radius:9px;padding:5px 7px;font-size:10px}.countdown{font-size:28px;font-weight:950;color:#0f766e}.help{line-height:1.6}.sep{height:1px;background:var(--line);margin:14px 0}.role-admin{color:#fbbf24}.floating-toast{position:fixed;right:18px;bottom:20px;background:#0f172a;color:#fff;padding:11px 14px;border-radius:12px;z-index:300;box-shadow:0 15px 35px rgba(0,0,0,.22);font-size:12px}.csv-box{display:flex;gap:8px;flex-wrap:wrap}.stat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.stat-box{padding:10px;border-radius:12px;background:#f8fafc;border:1px solid var(--line)}.stat-box b{display:block;font-size:16px}.stat-box span{font-size:9px;color:var(--muted)}
+@media(max-width:980px){.layout{grid-template-columns:78px minmax(0,1fr)}.sidebar{padding:10px 7px}.nav-section{display:none}.nav-btn{justify-content:center;padding:11px 5px}.nav-btn span:last-child{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.span3,.span4{grid-column:span 6}.stat-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.auth-card{grid-template-columns:1fr}.auth-hero{display:none}.auth-form{padding:25px 20px}.topbar{height:60px;padding:0 12px}.layout{display:block}.sidebar{display:none}.main{padding:12px 10px 86px}.page-head{align-items:flex-start;flex-direction:column}.page-title{font-size:21px}.kpis{grid-template-columns:repeat(2,1fr);gap:8px}.kpi{padding:13px}.kpi-value{font-size:23px}.span3,.span4,.span6,.span8{grid-column:1/-1}.three{grid-template-columns:1fr}.op-grid{grid-template-columns:repeat(2,1fr)}.bottom-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);z-index:50;padding:5px max(5px,env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom))}.bottom-nav button{border:0;background:transparent;padding:7px 2px;color:#64748b;font-size:9px;font-weight:800}.bottom-nav button b{display:block;font-size:18px;margin-bottom:2px}.bottom-nav button.active{color:#0f766e}.mobile-fab{display:grid;place-items:center;position:fixed;right:15px;bottom:76px;width:52px;height:52px;border-radius:17px;border:0;background:linear-gradient(135deg,#0f766e,#06b6d4);color:#fff;font-size:25px;box-shadow:0 12px 28px rgba(8,145,178,.32);z-index:55}.modal-back{padding:0;align-items:end}.modal{border-radius:22px 22px 0 0;max-height:94vh}.detail-hero{border-radius:14px}.score-row{display:grid;grid-template-columns:repeat(3,1fr)}.score-pill{min-width:0}.filters{display:grid;grid-template-columns:1fr 1fr}.filters input,.filters select{min-width:0;width:100%}.stat-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div id="auth" class="auth-wrap">
+  <div class="auth-card">
+    <section class="auth-hero">
+      <div class="logo">FONKON</div>
+      <div class="hero-title">用数据，而不是感觉<br>开发水果进口市场。</div>
+      <div class="hero-copy">Market OS 1.2 把15分钟客户访谈转化为客户价值、商机热度、陆海切换机会和下一步作战动作。</div>
+      <div class="hero-points"><div class="hero-point"><span class="dot">✓</span><span>客户事实自动计算 CV / DC / DP</span></div><div class="hero-point"><span class="dot">✓</span><span>东货 LSOI / 西货 PSOI 自动识别切换窗口</span></div><div class="hero-point"><span class="dot">✓</span><span>主管看漏斗、业务员排行和试柜转化</span></div></div>
+    </section>
+    <section class="auth-form">
+      <div class="eyebrow">FONKON MARKET OS</div><div class="title">市场作战系统 1.2</div><div class="muted">正式版｜客户价值 + 商机热度 + 供应链机会引擎</div>
+      <div class="tabs"><button id="tabLogin" class="tab active">登录</button><button id="tabRegister" class="tab">首次注册</button></div>
+      <form id="loginForm" class="grid"><div class="field span12"><label>企业邮箱</label><input id="loginEmail" type="email" required></div><div class="field span12"><label>密码</label><input id="loginPassword" type="password" required></div><div class="field span12"><button class="btn btn-primary btn-full">进入作战中心</button></div></form>
+      <form id="registerForm" class="grid hide"><div class="field span12"><label>姓名</label><input id="regName" required></div><div class="field span12"><label>邮箱</label><input id="regEmail" type="email" required></div><div class="field span12"><label>密码（至少6位）</label><input id="regPassword" type="password" minlength="6" required></div><div class="field span12"><label>企业邀请码</label><input id="regCode" required></div><div class="field span12"><button class="btn btn-primary btn-full">注册并激活</button></div></form>
+      <div id="authMsg" class="muted" style="margin-top:12px"></div>
+    </section>
+  </div>
+</div>
+<div id="app" class="app hide">
+  <header class="topbar"><div class="top-left"><div class="brand-mark">F</div><div><div class="brand-name">FONKON Market OS</div><div class="top-meta">数据驱动进口水果市场开发</div></div></div><div style="display:flex;align-items:center;gap:10px"><div id="who" style="font-size:12px"></div><button id="logout" class="btn btn-soft">退出</button></div></header>
+  <div class="layout">
+    <aside class="sidebar"><div class="nav-section">作战</div><button class="nav-btn active" data-view="dashboard"><span class="ico">⌂</span><span>今日作战</span></button><button class="nav-btn" data-view="customers"><span class="ico">◎</span><span>客户</span></button><button class="nav-btn" data-view="opportunities"><span class="ico">◇</span><span>商机</span></button><button class="nav-btn" data-view="visits"><span class="ico">✎</span><span>拜访</span></button><button class="nav-btn" data-view="tasks"><span class="ico">✓</span><span>任务</span></button><div class="nav-section">分析</div><button class="nav-btn" data-view="manager"><span class="ico">▥</span><span>主管看板</span></button><button class="nav-btn" data-view="knowledge"><span class="ico">⌘</span><span>行业数据库</span></button><div class="nav-section">系统</div><button class="nav-btn" data-view="team"><span class="ico">♙</span><span>团队账号</span></button><button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>评分规则</span></button></aside>
+    <main class="main"><div id="view"></div></main>
+  </div>
+  <button id="fab" class="mobile-fab" title="快速新增客户">＋</button>
+  <nav class="bottom-nav"><button data-view="dashboard" class="active"><b>⌂</b>作战</button><button data-view="customers"><b>◎</b>客户</button><button data-view="opportunities"><b>◇</b>商机</button><button data-view="visits"><b>✎</b>拜访</button><button data-view="tasks"><b>✓</b>任务</button></nav>
+</div>
+<div id="modalRoot"></div><div id="toastRoot"></div>
+<script>
+const U='https://rkunyhugitvglxkdolgz.supabase.co';
+const K='sb_publishable_rrP7uAmT3NfQm9-WEM9yOw__jhzha_3';
+const FN=U+'/functions/v1/fonkon-market-os';
+let ses=null, profile=null, customers=[], opportunities=[], visits=[], tasks=[], profiles=[], evidence=[];
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const num=x=>Number(x||0); const fmt=x=>Number(x||0).toLocaleString('zh-CN',{maximumFractionDigits:1});
+const dt=x=>x?new Date(x).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
+const dOnly=x=>x?new Date(x).toLocaleDateString('zh-CN'):'-';
+const roleName=r=>({admin:'管理员',manager:'主管',sales:'业务员'}[r]||r);
+function toast(msg){$('#toastRoot').innerHTML='<div class="floating-toast">'+esc(msg)+'</div>';setTimeout(()=>$('#toastRoot').innerHTML='',2400)}
+function badge(v){const c=v==='红'?'b-red':v==='橙'?'b-orange':v==='黄'?'b-yellow':v==='绿'?'b-green':v==='蓝'?'b-blue':v==='S'?'b-red':v==='A'?'b-orange':v==='B'?'b-yellow':'b-gray';return '<span class="badge '+c+'">'+esc(v||'-')+'</span>'}
+function progress(v){v=Math.max(0,Math.min(100,num(v)));return '<div class="progress"><i style="width:'+v+'%"></i></div>'}
+async function req(path,opt={}){const h=Object.assign({apikey:K,'content-type':'application/json'},opt.headers||{});if(ses)h.authorization='Bearer '+ses.access_token;const r=await fetch(U+path,Object.assign({},opt,{headers:h}));const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch{j=t}if(!r.ok)throw Error(j?.message||j?.error_description||j?.error||('HTTP '+r.status));return j}
+async function edge(body){const h={apikey:K,'content-type':'application/json'};if(ses)h.authorization='Bearer '+ses.access_token;const r=await fetch(FN,{method:'POST',headers:h,body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw Error(j.error||'操作失败');return j}
+function saveSession(x){ses=x;localStorage.setItem('fonkon_session',JSON.stringify(x))}function clearSession(){ses=null;profile=null;localStorage.removeItem('fonkon_session')}
+async function loadProfile(){const a=await req('/rest/v1/profiles?id=eq.'+ses.user.id+'&select=*');profile=a[0]||null;if(!profile)throw Error('账号未激活')}
+async function refreshAll(){const ps=['/rest/v1/customers?select=*&order=updated_at.desc&limit=1000','/rest/v1/opportunities?select=*&order=final_priority.desc&limit=1000','/rest/v1/visits?select=*&order=visited_at.desc&limit=1000','/rest/v1/customer_tasks?select=*&order=due_at.asc.nullslast&limit=1000','/rest/v1/data_evidence?select=*&order=observed_at.desc&limit=1000'];if(['admin','manager'].includes(profile?.role))ps.push('/rest/v1/profiles?select=*&order=name.asc');const a=await Promise.all(ps.map(p=>req(p)));[customers,opportunities,visits,tasks,evidence]=a;profiles=a[5]||[profile]}
+function showApp(){if(!ses||!profile){$('#auth').classList.remo

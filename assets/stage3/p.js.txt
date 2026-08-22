@@ -1,0 +1,113 @@
+/* FONKON R10.1 unified interaction router - removes fragile inline onclick execution */
+(function(){
+  const R={version:'R10.1',converted:0,errors:[]};
+  window.FONKON_R101=R;
+
+  // Expose legacy global functions so delegated actions can resolve them reliably.
+  ['render','closeModal','modal','customerModal','opportunityModal','visitModal','taskModal','openCustomer','completeTask','exportCustomers','exportOpps','editFruitRule','archiveCustomer','restoreCustomer','purgeCustomer','adminResetPassword','downloadImportTemplate','runBulkImport','kpiTargetModal','dismissReminder','markAllReminderRead','approveSales','rejectSales','toggleSales','revokeInvite','handoverSales','makeSalesInvite','knowledgeView','accountView','importView','kpiView','remindersView','recycleView','managerView','teamView','settingsView'].forEach(n=>{
+    try{const f=eval(n);if(typeof f==='function')window[n]=f}catch{}
+  });
+
+  function report(err,ctx){
+    const msg=(err&&err.message)||String(err||'未知错误');
+    R.errors.unshift({time:new Date().toISOString(),ctx:ctx||'',message:msg});
+    R.errors=R.errors.slice(0,20);
+    console.error('[FONKON R10.1]',ctx||'',err);
+    try{toast('操作失败：'+msg)}catch{}
+  }
+
+  function convert(el){
+    if(!el||el.nodeType!==1)return;
+    if(el.hasAttribute&&el.hasAttribute('onclick')&&!el.dataset.r101Inline){
+      el.dataset.r101Inline=el.getAttribute('onclick')||'';
+      el.removeAttribute('onclick');
+      R.converted++;
+    }
+    if(el.querySelectorAll)el.querySelectorAll('[onclick]').forEach(x=>{
+      if(!x.dataset.r101Inline){x.dataset.r101Inline=x.getAttribute('onclick')||'';x.removeAttribute('onclick');R.converted++}
+    });
+  }
+  convert(document.documentElement);
+  const observer=new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(convert)));
+  observer.observe(document.documentElement,{subtree:true,childList:true});
+
+  function runLegacy(el,event){
+    const code=el.dataset.r101Inline||'';
+    if(!code)return;
+    // Functions referenced by old inline handlers are exposed on window above.
+    return Function('event',code).call(el,event);
+  }
+  async function routeView(v){
+    try{if(typeof closeModal==='function')closeModal()}catch{}
+    if(typeof render!=='function')throw Error('页面路由未加载');
+    return await render(v);
+  }
+
+  async function selfCheck(){
+    const fnNames=['render','closeModal','modal','customerModal','opportunityModal','visitModal','taskModal','req','edge'];
+    const fn=fnNames.map(n=>[n,typeof window[n]==='function'||(()=>{try{return typeof eval(n)==='function'}catch{return false}})()]);
+    let api=[];
+    for(const [name,path] of [['客户API','/rest/v1/customers?select=id&limit=1'],['商机API','/rest/v1/opportunities?select=id&limit=1'],['知识API','/rest/v1/fruit_catalog?select=fruit&limit=1'],['账号API','/rest/v1/profiles?select=id&limit=1']]){
+      try{await req(path);api.push([name,true,'通过'])}catch(e){api.push([name,false,e.message])}
+    }
+    const missing=fn.filter(x=>!x[1]);
+    const rows=[...fn.map(x=>[x[0],x[1],x[1]?'已加载':'缺失']),...api];
+    const html='<div class="notice '+(missing.length?'':'good')+'"><b>R10.1交互自检</b><br>已接管旧内联按钮 '+R.converted+' 个；运行时错误 '+R.errors.length+' 条。</div>'+
+      rows.map(x=>'<div class="task-card"><div class="task-top"><b>'+x[0]+'</b><span class="badge '+(x[1]?'b-green':'b-red')+'">'+(x[1]?'正常':'异常')+'</span></div><div class="task-meta">'+String(x[2]||'')+'</div></div>').join('')+
+      (R.errors.length?'<div class="card card-pad" style="margin-top:10px"><b>最近错误</b><div class="muted" style="white-space:pre-wrap;margin-top:8px">'+R.errors.slice(0,8).map(x=>x.time+' '+x.ctx+' '+x.message).join('\n')+'</div></div>':'');
+    modal('系统交互自检',html);
+  }
+
+  // Replace the mobile tool sheet with event-router buttons. No inline onclick remains.
+  window.mobileTools=function(){
+    const admin=typeof profile!=='undefined'&&profile?.role==='admin';
+    const items=[
+      ['account','🔐','账号安全','修改密码与账号状态'],
+      ['import','⇧','Excel导入','客户/商机批量导入'],
+      ['kpi','▦','KPI目标','目标与完成率'],
+      ['reminders','🔔','提醒中心','跟进/红灯/旺季/审批'],
+      ['knowledge','⌘','知识中心','水果/口岸/检测/市场情报']
+    ];
+    if(admin)items.push(['manager','▥','最高权限看板','团队漏斗与排行'],['team','♙','账号审批','注册审批与账号控制'],['settings','⚙','评分规则','水果Q分与自动评分'],['recycle','♲','回收站','30天恢复与永久删除']);
+    const body='<div class="tool-grid">'+items.map(x=>'<button class="tool-tile" data-r101-view="'+x[0]+'"><b>'+x[1]+' '+x[2]+'</b><span>'+x[3]+'</span></button>').join('')+
+      '<button class="tool-tile" data-r101-action="selfcheck"><b>✓ 系统自检</b><span>检查按钮、函数和核心API</span></button></div>';
+    modal('工作工具',body);
+  };
+
+  // Re-bind the top mobile-tools button if it already exists.
+  function bindTopTools(){
+    const b=document.querySelector('#mobileToolsBtn');
+    if(b){b.onclick=null;b.removeAttribute('onclick');b.dataset.r101Action='tools'}
+  }
+  [50,500,1200,2500].forEach(ms=>setTimeout(bindTopTools,ms));
+
+  // Capture phase: our router gets the click before legacy inline handlers or later wrappers.
+  document.addEventListener('click',async function(event){
+    const el=event.target.closest('[data-r101-view],[data-r101-action],[data-r101-inline]');
+    if(!el)return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try{
+      el.style.opacity='.65';
+      if(el.dataset.r101View)await routeView(el.dataset.r101View);
+      else if(el.dataset.r101Action==='tools')await window.mobileTools();
+      else if(el.dataset.r101Action==='selfcheck')await selfCheck();
+      else if(el.dataset.r101Inline){const r=runLegacy(el,event);if(r&&typeof r.then==='function')await r}
+    }catch(e){report(e,el.dataset.r101View||el.dataset.r101Action||el.dataset.r101Inline||'click')}
+    finally{setTimeout(()=>{try{el.style.opacity=''}catch{}},120)}
+  },true);
+
+  window.addEventListener('error',e=>report(e.error||e.message,'window.error'));
+  window.addEventListener('unhandledrejection',e=>report(e.reason,'promise'));
+
+  // Mark version so the user can verify the correct runtime is active.
+  function mark(){
+    try{
+      const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 交互整合稳定版 · R10.1';
+      let b=document.querySelector('#releaseBadge');
+      if(!b){const who=document.querySelector('#who');if(who){b=document.createElement('span');b.id='releaseBadge';b.className='badge b-green';who.parentElement.insertBefore(b,who)}}
+      if(b)b.textContent='R10.1';
+    }catch(e){report(e,'version mark')}
+  }
+  [100,700,1800].forEach(ms=>setTimeout(mark,ms));
+})();

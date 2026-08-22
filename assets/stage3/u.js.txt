@@ -1,0 +1,52 @@
+/* FONKON R10.3 U: robust industry-data modal; no $/$$ selector dependency */
+(function(){
+  const KINDS={fruit:'水果产区/季节',land:'东货陆路口岸',sea:'西货海运口岸',jm:'江门口岸',route:'江门路线'};
+  const TABLES={fruit:'fruit_seasons',land:'land_port_stats',sea:'sea_port_stats',jm:'jiangmen_port_stats',route:'jiangmen_routes'};
+  const NUMERIC=new Set(['start_month','peak_start_month','peak_end_month','end_month','annual_output_tons','export_to_china_tons','concentration_score','month','normal_clearance_days','peak_clearance_days','avg_queue_hours','avg_wait_hours','inspection_rate','testing_rate','inspection_days','testing_days','congestion_index','sample_size','origin_to_hk_days','hk_transfer_days','hk_to_jiangmen_days','jiangmen_port_days','jiangmen_clearance_days','total_days','total_cost_per_container']);
+  const esc2=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  function all(sel,root=document){return Array.from(root.querySelectorAll(sel))}
+  function fi(name,label,opt={}){const type=opt.type||'text',cls=opt.cls||'span4',req=opt.required?' required':'',min=opt.min!=null?' min="'+opt.min+'"':'',max=opt.max!=null?' max="'+opt.max+'"':'',step=opt.step!=null?' step="'+opt.step+'"':'',ph=opt.placeholder?' placeholder="'+esc2(opt.placeholder)+'"':'';return '<div class="field '+cls+'"><label>'+esc2(label)+(opt.required?' *':'')+'</label><input name="'+esc2(name)+'" type="'+type+'"'+req+min+max+step+ph+'></div>'}
+  function fs(name,label,values,def,opt={}){const cls=opt.cls||'span4',req=opt.required?' required':'';return '<div class="field '+cls+'"><label>'+esc2(label)+(opt.required?' *':'')+'</label><select name="'+esc2(name)+'"'+req+'>'+values.map(v=>'<option value="'+esc2(v)+'"'+(v===def?' selected':'')+'>'+esc2(v)+'</option>').join('')+'</select></div>'}
+  function common(){return fi('source_text','数据来源',{cls:'span6',required:true,placeholder:'官方链接/港口台账/船公司/实验室/公司正式记录'})+fs('evidence_level','证据等级',['A','B','C','D'],'C',{cls:'span6',required:true})}
+  function fields(kind){
+    if(kind==='fruit')return fi('fruit','水果',{required:true})+fs('cargo_group','东/西',['东货','西货'],'东货')+fi('country','国家',{required:true})+fi('region','产区')+fi('start_month','上市开始月',{type:'number',min:1,max:12})+fi('peak_start_month','高峰开始月',{type:'number',min:1,max:12})+fi('peak_end_month','高峰结束月',{type:'number',min:1,max:12})+fi('end_month','上市结束月',{type:'number',min:1,max:12})+fi('annual_output_tons','年产量/吨',{type:'number',min:0,step:'0.01'})+fi('export_to_china_tons','出口中国/吨',{type:'number',min:0,step:'0.01'})+fi('concentration_score','集中度0-10',{type:'number',min:0,max:10,step:'0.1'})+common();
+    if(kind==='route')return fi('country','国家',{required:true})+fi('origin_region','产区')+fi('origin_port','起运港',{required:true})+fs('cargo_group','东/西',['东货','西货'],'东货')+fi('origin_to_hk_days','起运港→香港/天',{type:'number',min:0,step:'0.1'})+fi('hk_transfer_days','香港中转/天',{type:'number',min:0,step:'0.1'})+fi('hk_to_jiangmen_days','香港→江门/天',{type:'number',min:0,step:'0.1'})+fi('jiangmen_port_days','江门港操作/天',{type:'number',min:0,step:'0.1'})+fi('jiangmen_clearance_days','江门通关/天',{type:'number',min:0,step:'0.1'})+fi('total_days','总时效/天',{type:'number',min:0,step:'0.1'})+fi('total_cost_per_container','总成本/柜',{type:'number',min:0,step:'0.01'})+common();
+    const port=kind==='jm'?'':fi('port_name','口岸',{required:true});
+    const wait=kind==='land'?fi('avg_queue_hours','平均排队小时',{type:'number',min:0,step:'0.1'}):fi('avg_wait_hours','平均等待小时',{type:'number',min:0,step:'0.1'});
+    return port+fi('fruit','水果')+fi('month','月份1-12',{type:'number',min:1,max:12})+fi('normal_clearance_days','正常/淡季通关天',{type:'number',min:0,step:'0.1'})+fi('peak_clearance_days','旺季通关天',{type:'number',min:0,step:'0.1'})+wait+fi('inspection_rate','查验%',{type:'number',min:0,max:100,step:'0.1'})+fi('testing_rate','送检%',{type:'number',min:0,max:100,step:'0.1'})+fi('inspection_days','查验耗时/天',{type:'number',min:0,step:'0.1'})+fi('testing_days','送检耗时/天',{type:'number',min:0,step:'0.1'})+fi('congestion_index','PCI拥堵系数',{type:'number',min:0,step:'0.01'})+fi('sample_size','样本数',{type:'number',min:0,step:'1'})+common();
+  }
+  function activate(kind){const root=document.querySelector('#modalRoot');if(!root)return;all('[data-fk-kind]',root).forEach(b=>b.classList.toggle('active',b.dataset.fkKind===kind))}
+  window.showKForm=function(kind='fruit',btn){
+    if(!KINDS[kind])kind='fruit';
+    const root=document.querySelector('#modalRoot'),box=root?.querySelector('#kForm');if(!root||!box)return;
+    activate(kind);if(btn)btn.classList.add('active');
+    box.innerHTML='<form id="kbFormR103" class="grid">'+fields(kind)+'<div class="span12"><button type="submit" class="btn btn-primary">保存'+KINDS[kind]+'</button></div></form>';
+    const form=root.querySelector('#kbFormR103');
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();const submit=form.querySelector('button[type="submit"]');if(submit.disabled)return;
+      try{
+        const x=Object.fromEntries(new FormData(form).entries());
+        Object.keys(x).forEach(k=>{if(NUMERIC.has(k))x[k]=x[k]===''?null:Number(x[k]);else if(typeof x[k]==='string')x[k]=x[k].trim()||null});
+        if(kind==='fruit'&&(!x.fruit||!x.country))throw Error('水果和国家为必填项');
+        if(kind==='route'&&(!x.country||!x.origin_port))throw Error('国家和起运港为必填项');
+        if((kind==='land'||kind==='sea')&&!x.port_name)throw Error('口岸为必填项');
+        if(!x.source_text)throw Error('请填写数据来源，不能录入无来源行业数据');
+        if(x.month!=null&&(x.month<1||x.month>12))throw Error('月份必须为1–12');
+        if(x.inspection_rate!=null&&(x.inspection_rate<0||x.inspection_rate>100))throw Error('查验比例必须为0–100%');
+        if(x.testing_rate!=null&&(x.testing_rate<0||x.testing_rate>100))throw Error('送检比例必须为0–100%');
+        submit.disabled=true;submit.textContent='保存中…';
+        await req('/rest/v1/'+TABLES[kind],{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(x)});
+        if(typeof closeModal==='function')closeModal();if(typeof toast==='function')toast(KINDS[kind]+'已保存');
+        try{if(typeof refreshAll==='function')await refreshAll()}catch{}
+        try{if(typeof knowledgeCenterView==='function')await knowledgeCenterView('routes')}catch{}
+      }catch(err){if(typeof toast==='function')toast('保存失败：'+String(err?.message||err));submit.disabled=false;submit.textContent='保存'+KINDS[kind]}
+    });
+  };
+  window.knowledgeModal=function(defaultKind='fruit'){
+    const tabs=Object.entries(KINDS).map(([k,v],i)=>'<button type="button" class="tab'+(i===0?' active':'')+'" data-fk-kind="'+k+'">'+v+'</button>').join('');
+    modal('录入行业数据','<div class="notice">所有行业数据必须有来源和证据等级。口岸实操统计建议填写样本数；A/B级正式来源可无样本数。单一客户反馈不能直接作为行业结论。</div><div class="tabs" id="fkIndustryTabs">'+tabs+'</div><div id="kForm"></div>');
+    const root=document.querySelector('#modalRoot');all('[data-fk-kind]',root).forEach(b=>b.addEventListener('click',()=>window.showKForm(b.dataset.fkKind,b)));
+    window.showKForm(KINDS[defaultKind]?defaultKind:'fruit');
+  };
+  window.fonkonIndustryModalCheck=function(){const root=document.querySelector('#modalRoot');return {modal:!!root,tabs:root?all('[data-fk-kind]',root).length:0,form:!!root?.querySelector('#kbFormR103')};};
+})();

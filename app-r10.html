@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>FONKON Market OS R10</title></head><body><div id="loading">FONKON Market OS R10 正在加载...</div><script>
+(async()=>{
+try{
+ const html=await fetch('app-r9.html?v=20260822-r10',{cache:'no-store'}).then(r=>r.text());
+ const patch=`<script>
+(function(){
+ window.FONKON={version:'R10',actions:{}};
+ window.addEventListener('error',function(e){console.warn('FONKON runtime',e.message)});
+ const old=window.addEventListener;
+ document.addEventListener('click',function(e){
+   const el=e.target.closest('button,a,.nav-btn,.tool-card');
+   if(!el)return;
+   if(el.disabled)return;
+   el.style.opacity='.7';
+   setTimeout(()=>el.style.opacity='',150);
+ },true);
+ window.fonkonAction=function(name){
+   try{if(typeof window[name]==='function')return window[name]();console.log('action',name)}catch(e){console.error(e)}
+ };
+ setTimeout(function(){
+   document.querySelectorAll('button').forEach(b=>{if(!b.dataset.r10){b.dataset.r10='1';b.addEventListener('click',()=>console.log('R10 click',b.innerText))}})
+ },1200);
+})();
+<\/script>`;
+ const body=html.replace('</body>',patch+'</body>');
+ document.open();document.write(body);document.close();
+}catch(e){document.body.innerHTML='R10加载失败：'+e.message}
+})();
+</script></body></html>

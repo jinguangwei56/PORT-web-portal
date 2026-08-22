@@ -1,0 +1,5 @@
+/* Admin UX patch */
+(function(){
+window.copyInvite=async code=>{try{await navigator.clipboard.writeText(code);toast('邀请码已复制')}catch{prompt('请复制邀请码',code)}};
+window.makeSalesInvite=async()=>{try{const r=await edge({action:'invite',role:'sales'});await writeAudit('create_invite','staff_invite',null,{code:r.code});await teamView();const box=$('#inviteResult');if(box){box.classList.remove('hide');box.innerHTML='<b style="font-size:18px">'+esc(r.code)+'</b> <button class="btn btn-soft" onclick="copyInvite(\''+r.code+'\')">复制</button><br><span class="muted">7天有效、一次性使用；业务员提交注册后仍须最高权限审批。</span>'}toast('业务员邀请码已生成')}catch(e){toast(e.message)}};
+})();

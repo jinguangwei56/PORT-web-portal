@@ -1,0 +1,104 @@
+/* FONKON R9: single runtime core for session + admin views */
+(function(){
+  let refreshPromise=null;
+  function jwtPayload(token){try{let s=String(token||'').split('.')[1]||'';s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return JSON.parse(atob(s))}catch{return {}}}
+  function currentUid(){return profile?.id||ses?.user?.id||jwtPayload(ses?.access_token).sub||null}
+  function sessionExp(){return Number(ses?.expires_at||jwtPayload(ses?.access_token).exp||0)}
+  function normalizeSession(x){
+    const old=ses||{};const merged=Object.assign({},old,x||{});const uid=merged.user?.id||profile?.id||jwtPayload(merged.access_token).sub||old.user?.id||null;
+    if(!merged.user&&uid)merged.user={id:uid,email:profile?.email||old.user?.email||null};
+    if(!merged.refresh_token&&old.refresh_token)merged.refresh_token=old.refresh_token;
+    return merged;
+  }
+  const baseSave=saveSession;
+  window.saveSession=saveSession=function(x){const m=normalizeSession(x);baseSave(m);return m};
+
+  async function refreshSession(force=false){
+    if(!ses?.access_token)return ses;
+    const remain=sessionExp()-Math.floor(Date.now()/1000);
+    if(!force&&remain>180)return ses;
+    if(!ses.refresh_token)throw Error('登录会话需要重新登录');
+    if(refreshPromise)return refreshPromise;
+    const rt=ses.refresh_token;
+    refreshPromise=(async()=>{
+      const r=await fetch(U+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({refresh_token:rt})});
+      const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch{j=null}
+      if(!r.ok||!j?.access_token)throw Error(j?.error_description||j?.message||j?.error||'登录续期失败');
+      saveSession(Object.assign({},ses,j));return ses;
+    })().finally(()=>refreshPromise=null);
+    return refreshPromise;
+  }
+  window.fonkonRefreshSession=refreshSession;
+  window.fonkonCurrentUid=currentUid;
+
+  async function parseResp(r){const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch{j=t}return j}
+  window.req=req=async function(path,opt={}){
+    const tokenEndpoint=path.startsWith('/auth/v1/token');
+    if(!tokenEndpoint&&ses?.access_token)await refreshSession(false);
+    const call=async()=>{const h=Object.assign({apikey:K,'content-type':'application/json'},opt.headers||{});if(!tokenEndpoint&&ses?.access_token)h.authorization='Bearer '+ses.access_token;return fetch(U+path,Object.assign({},opt,{headers:h}))};
+    let r=await call();
+    if(!tokenEndpoint&&r.status===401&&ses?.refresh_token){await refreshSession(true);r=await call()}
+    const j=await parseResp(r);if(!r.ok)throw Error(j?.message||j?.error_description||j?.error||('HTTP '+r.status));return j;
+  };
+  window.edge=edge=async function(body){
+    if(ses?.access_token)await refreshSession(false);
+    const call=async()=>{const h={apikey:K,'content-type':'application/json'};if(ses?.access_token)h.authorization='Bearer '+ses.access_token;return fetch(FN,{method:'POST',headers:h,body:JSON.stringify(body)})};
+    let r=await call();if(r.status===401&&ses?.refresh_token){await refreshSession(true);r=await call()}const j=await parseResp(r);if(!r.ok)throw Error(j?.error||j?.message||'操作失败');return j;
+  };
+
+  async function refreshMyProfile(){
+    const uid=currentUid();if(!uid)throw Error('无法识别当前登录用户');
+    const a=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(uid)+'&select=*');if(!a?.length)throw Error('未找到当前账号档案');
+    profile=a[0];
+    if(ses&&!ses.user){ses.user={id:uid,email:profile.email||null};localStorage.setItem('fonkon_session',JSON.stringify(ses))}
+    return profile;
+  }
+  window.fonkonRefreshMyProfile=refreshMyProfile;
+  function isAdmin(){return !!(profile&&profile.role==='admin'&&profile.active===true&&(profile.approval_status==null||profile.approval_status==='approved'))}
+  window.fonkonIsAdmin=isAdmin;
+  try{isManager=isAdmin;window.isManager=isAdmin}catch{}
+
+  async function adminReady(){await refreshMyProfile();if(!isAdmin())throw Error('当前账号不是启用且已审批的最高权限账号');await refreshAll();return profile}
+  function failPage(title,e){$('#view').innerHTML=pageHead(title,'管理员模块加载失败')+'<div class="card card-pad"><div class="danger-note"><b>加载失败：</b>'+esc(e?.message||String(e))+'</div></div>'}
+
+  window.managerView=managerView=async function(){
+    try{await adminReady();const stages=['待验证','需求确认','方案','报价','试柜','持续合作'];const funnel=stages.map(s=>({s,n:opportunities.filter(o=>o.stage===s).length}));
+      const reps=profiles.filter(p=>p.role==='sales').map(p=>{const cs=customers.filter(c=>c.owner_id===p.id),ops=opportunities.filter(o=>cs.some(c=>c.id===o.customer_id)),vs=visits.filter(v=>v.created_by===p.id);return {name:p.name||'未命名',customers:cs.length,high:cs.filter(c=>['S','A'].includes(c.cv_grade)).length,red:ops.filter(o=>o.alert_level==='红').length,trial:ops.reduce((s,o)=>s+num(o.trial_volume),0),visits:vs.length,score:ops.reduce((s,o)=>s+num(o.final_priority),0)}}).sort((a,b)=>b.score-a.score);
+      const fm={};opportunities.forEach(o=>{const k=o.fruit||'未知';fm[k]??={fruit:k,count:0,switchable:0,sum:0};fm[k].count++;fm[k].switchable+=num(o.switchable_volume);fm[k].sum+=num(o.final_priority)});const fruits=Object.values(fm).map(x=>({...x,avg:x.count?x.sum/x.count:0})).sort((a,b)=>b.avg-a.avg).slice(0,8);
+      let html=pageHead('最高权限作战看板','全公司客户、商机、业务员与试柜转化。','<button class="btn btn-soft" onclick="exportCustomers()">导出客户</button><button class="btn btn-soft" onclick="exportOpps()">导出商机</button>');
+      html+='<div class="kpis"><div class="card kpi"><div class="kpi-label">团队客户</div><div class="kpi-value">'+customers.length+'</div><div class="kpi-foot">全公司客户池</div></div><div class="card kpi"><div class="kpi-label">有效商机</div><div class="kpi-value">'+opportunities.filter(o=>o.stage!=='关闭').length+'</div><div class="kpi-foot">未关闭</div></div><div class="card kpi"><div class="kpi-label">试柜柜量</div><div class="kpi-value">'+fmt(opportunities.reduce((s,o)=>s+num(o.trial_volume),0))+'</div><div class="kpi-foot">首批验证</div></div><div class="card kpi"><div class="kpi-label">持续合作</div><div class="kpi-value">'+opportunities.filter(o=>o.stage==='持续合作').length+'</div><div class="kpi-foot">进入复购</div></div></div>';
+      html+='<div class="card card-pad"><div class="section-title"><h2>市场开发漏斗</h2><span class="hint">待验证→需求→方案→报价→试柜→持续合作</span></div><div class="funnel">'+funnel.map(x=>'<div class="funnel-step"><b>'+x.n+'</b><span>'+x.s+'</span></div>').join('')+'</div></div>';
+      html+='<div class="two section"><div class="card card-pad"><div class="section-title"><h2>业务员作战排行</h2></div>'+(reps.length?reps.map((r,i)=>'<div class="rank"><div class="rank-no">'+(i+1)+'</div><div class="rank-main"><b>'+esc(r.name)+'</b><div>'+r.customers+'客户 · '+r.high+' A/S · '+r.red+'红灯 · '+r.visits+'拜访</div></div><div class="rank-val">'+fmt(r.trial)+'柜</div></div>').join(''):'<div class="empty">暂无业务员数据</div>')+'</div><div class="card card-pad"><div class="section-title"><h2>水果机会排行</h2></div>'+(fruits.length?fruits.map((f,i)=>'<div class="rank"><div class="rank-no">'+(i+1)+'</div><div class="rank-main"><b>'+esc(f.fruit)+'</b><div>'+f.count+'个商机 · 可切换 '+fmt(f.switchable)+'柜</div></div><div class="rank-val">'+f.avg.toFixed(1)+'</div></div>').join(''):'<div class="empty">暂无商机数据</div>')+'</div></div>';$('#view').innerHTML=html;
+    }catch(e){failPage('最高权限看板',e)}
+  };
+
+  const fd=x=>x?new Date(x).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'-';
+  window.teamView=teamView=async function(){
+    try{await adminReady();const [ps,invs,aud]=await Promise.all([req('/rest/v1/profiles?select=*&order=applied_at.desc.nullslast,name.asc'),req('/rest/v1/staff_invites?select=*&order=created_at.desc&limit=50'),req('/rest/v1/admin_audit_log?select=*&order=created_at.desc&limit=30')]);profiles=ps;const pending=ps.filter(p=>p.role==='sales'&&p.approval_status==='pending'),enabled=ps.filter(p=>p.role==='sales'&&p.approval_status==='approved'&&p.active),stopped=ps.filter(p=>p.role==='sales'&&(p.approval_status==='rejected'||(p.approval_status==='approved'&&!p.active)));const now=Date.now();
+      const row=p=>'<div class="rank"><div class="rank-no">'+esc((p.name||'?').slice(0,1))+'</div><div class="rank-main"><b>'+esc(p.name||'未命名')+'</b><div>'+esc(p.email||'-')+' · '+(p.approval_status==='pending'?'待审批':p.active?'已启用':'已停用')+'</div><div class="muted">申请 '+fd(p.applied_at)+(p.approval_note?' · '+esc(p.approval_note):'')+'</div></div><div class="actions">'+(p.approval_status==='pending'?'<button class="btn btn-primary" onclick="approveSales(\''+p.id+'\')">通过</button><button class="btn btn-soft" onclick="rejectSales(\''+p.id+'\')">驳回</button>':p.approval_status==='approved'?(p.active?'<button class="btn btn-soft" onclick="toggleSales(\''+p.id+'\',false)">停用</button>':'<button class="btn btn-primary" onclick="toggleSales(\''+p.id+'\',true)">恢复</button>'):'')+'</div></div>';
+      let html=pageHead('账号审批与团队控制','最高权限审批注册、控制账号和邀请码。','<button class="btn btn-primary" onclick="makeSalesInvite()">＋生成业务员邀请码</button>');html+='<div class="kpis"><div class="card kpi"><div class="kpi-label">待审批</div><div class="kpi-value">'+pending.length+'</div></div><div class="card kpi"><div class="kpi-label">启用业务员</div><div class="kpi-value">'+enabled.length+'</div></div><div class="card kpi"><div class="kpi-label">停用/驳回</div><div class="kpi-value">'+stopped.length+'</div></div><div class="card kpi"><div class="kpi-label">有效邀请码</div><div class="kpi-value">'+invs.filter(i=>i.active&&!i.used_by&&(!i.expires_at||new Date(i.expires_at).getTime()>now)).length+'</div></div></div>';
+      html+='<div class="card card-pad section"><div class="section-title"><h2>待审批注册</h2></div>'+(pending.length?pending.map(row).join(''):'<div class="empty">暂无待审批申请</div>')+'</div><div class="two section"><div class="card card-pad"><div class="section-title"><h2>已启用业务员</h2></div>'+(enabled.length?enabled.map(row).join(''):'<div class="empty">暂无业务员</div>')+'</div><div class="card card-pad"><div class="section-title"><h2>停用 / 驳回</h2></div>'+(stopped.length?stopped.map(row).join(''):'<div class="empty">暂无</div>')+'</div></div>';
+      html+='<div class="two section"><div class="card card-pad"><div class="section-title"><h2>邀请码</h2><button class="btn btn-primary" onclick="makeSalesInvite()">生成</button></div><div id="inviteResult" class="notice hide"></div>'+invs.slice(0,12).map(i=>'<div class="task-card"><div class="task-top"><b>'+esc(i.code)+'</b><span class="badge '+(i.active&&!i.used_by?'b-green':'b-gray')+'">'+(i.used_by?'已使用':i.active?'有效':'失效')+'</span></div><div class="task-meta">创建 '+fd(i.created_at)+' · 到期 '+fd(i.expires_at)+'</div></div>').join('')+'</div><div class="card card-pad"><div class="section-title"><h2>管理员操作日志</h2></div>'+(aud.length?aud.map(a=>'<div class="timeline-item"><div class="timeline-date">'+fd(a.created_at)+' · '+esc(a.action||'-')+'</div><div class="timeline-text">'+esc(a.target_type||'-')+'</div></div>').join(''):'<div class="empty">暂无操作记录</div>')+'</div></div>';$('#view').innerHTML=html;
+    }catch(e){failPage('账号审批',e)}
+  };
+
+  window.settingsView=settingsView=async function(){
+    try{await adminReady();const rules=await req('/rest/v1/fruit_value_rules?select=*&order=cargo_group,fruit');$('#view').innerHTML=pageHead('评分规则','业务员只录事实，系统按统一规则自动计算。')+'<div class="notice good"><b>客观评分已启用：</b>V由柜量；Q由水果价值规则；P由痛点事实；T/R由商机和供应链复杂度；M由付费事实；F由合作行为；W由影响力。OT同样由真实需求、时间、行为、决策与竞争窗口自动计算。</div><div class="card card-pad section"><div class="section-title"><h2>水果Q评分规则</h2><span class="hint">只有最高权限可调整</span></div><div class="table-wrap"><table class="table"><thead><tr><th>水果</th><th>东/西</th><th>Q分</th><th>逻辑</th><th>操作</th></tr></thead><tbody>'+rules.map(r=>'<tr><td>'+esc(r.fruit)+'</td><td>'+esc(r.cargo_group)+'</td><td><b>'+fmt(r.q_score)+'</b></td><td>'+esc(r.rationale||'')+'</td><td><button class="btn btn-soft" onclick="editFruitRule(&quot;'+r.id+'&quot;,'+r.q_score+')">调整</button></td></tr>').join('')+'</tbody></table></div></div>';
+    }catch(e){failPage('评分规则',e)}
+  };
+
+  window.accountView=async function(){
+    try{await refreshMyProfile();const role=isAdmin()?'最高权限':'业务员';const status=profile.active?'启用':'停用';const approval=profile.approval_status==='approved'?'已审批':profile.approval_status==='pending'?'待审批':profile.approval_status==='rejected'?'已驳回':'-';let html=pageHead('账号安全','密码、账号状态与数据安全。','<button class="btn btn-primary" onclick="passwordModal(false)">修改密码</button>');html+='<div class="two"><div class="card card-pad"><div class="section-title"><h2>我的账号</h2></div><div class="security-box"><b>'+esc(profile.name||'')+'</b><div class="muted">'+esc(profile.email||ses?.user?.email||'')+'</div><div style="margin-top:10px">角色：<b>'+role+'</b> · 状态：<b>'+status+'</b> · '+approval+'</div></div></div><div class="card card-pad"><div class="section-title"><h2>安全规则</h2></div><div class="help">• 业务员只能读取自己的客户数据<br>• 核心数据不允许业务员永久删除<br>• 最高权限操作保留审计记录</div></div></div>';$('#view').innerHTML=html;
+    }catch(e){failPage('账号安全',e)}
+  };
+
+  window.mobileTools=function(){const admin=isAdmin();const tile=(v,ico,t,s)=>'<button class="tool-tile" data-fk-view="'+v+'"><b>'+ico+' '+t+'</b><span>'+s+'</span></button>';modal('工作工具','<div class="tool-grid">'+tile('account','🔐','账号安全','账号状态与密码')+tile('import','⇧','Excel导入','客户/商机批量导入')+tile('kpi','▦','KPI目标','目标与完成率')+tile('reminders','🔔','提醒中心','跟进/红灯/旺季/审批')+(admin?tile('team','♙','账号审批','审批、停用、邀请码')+tile('manager','▥','最高权限看板','全公司漏斗与业务员排行')+tile('recycle','♲','回收站','30天恢复与永久删除')+tile('selfcheck','✓','系统自检','检查函数和核心API'):'')+tile('knowledge','⌘','知识中心','水果/口岸/检测/市场情报')+'</div>')};
+
+  const oldRender=window.render;
+  window.render=render=async function(v){if(v==='manager')return managerView();if(v==='team')return teamView();if(v==='settings')return settingsView();if(v==='account')return accountView();return oldRender(v)};
+
+  async function heal(){try{if(!ses)return;await refreshSession(false);await refreshMyProfile();const w=$('#who');if(w)w.innerHTML='<b>'+esc(profile.name||profile.email||'')+'</b> · '+(isAdmin()?'最高权限':'业务员');$$('[data-view="manager"],[data-view="team"],[data-view="settings"]').forEach(b=>b.style.display=isAdmin()?'':'none')}catch(e){console.warn('R9 heal',e)}}
+  setInterval(()=>{if(document.visibilityState==='visible')heal()},240000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)heal()});
+  function pin(){try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent=window.innerWidth<=700?'Market OS · 整合稳定版 R9':'1.2 整合稳定版 · R9';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R9'}catch{}}
+  [80,500,1500,3000].forEach(ms=>setTimeout(()=>{heal();pin()},ms));
+})();

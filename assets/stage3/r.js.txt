@@ -1,0 +1,113 @@
+/* FONKON R10.2 single interaction core */
+(function(){
+  const STATE={version:'R10.2',clicks:0,errors:[]};
+  window.FONKON_R102=STATE;
+
+  const css=document.createElement('style');
+  css.textContent=`.mobile-tools-btn{display:none}.r102-status{font-size:10px;color:var(--muted)}@media(max-width:700px){.mobile-tools-btn{display:grid!important}.tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.tool-tile{border:1px solid var(--line);background:#fff;border-radius:16px;padding:14px;text-align:left;min-height:94px;cursor:pointer}.tool-tile b{display:block;font-size:14px;line-height:1.35}.tool-tile span{display:block;color:var(--muted);font-size:10px;margin-top:6px;line-height:1.45}}`;
+  document.head.appendChild(css);
+
+  function msgOf(e){return String(e?.message||e?.reason?.message||e?.reason||e||'未知错误').slice(0,300)}
+  function report(e,ctx='操作'){
+    const m=msgOf(e);STATE.errors.unshift({time:new Date().toISOString(),ctx,message:m});STATE.errors=STATE.errors.slice(0,30);
+    console.error('[FONKON R10.2]',ctx,e);try{toast(ctx+'失败：'+m)}catch{}
+  }
+  function currentUid(){
+    if(profile?.id)return profile.id;
+    if(ses?.user?.id)return ses.user.id;
+    try{const s=String(ses?.access_token||'').split('.')[1];if(!s)return null;let x=s.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x)).sub||null}catch{return null}
+  }
+  window.fonkonCurrentUid=currentUid;
+
+  async function refreshMyProfile(){
+    const uid=currentUid();if(!uid)throw Error('当前登录会话缺少用户ID，请退出后重新登录一次');
+    const a=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(uid)+'&select=*');
+    if(!a?.length)throw Error('未找到当前账号档案');profile=a[0];
+    if(ses&&!ses.user){ses.user={id:uid,email:profile.email||null};localStorage.setItem('fonkon_session',JSON.stringify(ses))}
+    return profile;
+  }
+  window.fonkonRefreshMyProfile=refreshMyProfile;
+  window.fonkonIsAdmin=()=>!!(profile?.role==='admin'&&profile?.active===true&&profile?.approval_status==='approved');
+
+  async function go(v){
+    try{if(typeof closeModal==='function')closeModal()}catch{}
+    if(typeof render!=='function')throw Error('页面路由未加载');
+    return await render(v);
+  }
+
+  window.mobileTools=function(){
+    const admin=window.fonkonIsAdmin();
+    const items=[
+      ['account','🔐','账号安全','密码、账号状态与安全'],
+      ['import','⇧','Excel导入','客户/商机批量导入'],
+      ['kpi','▦','KPI目标','目标与完成率'],
+      ['reminders','🔔','提醒中心','跟进/红灯/旺季/审批'],
+      ['knowledge','⌘','知识中心','水果/口岸/检测/市场情报']
+    ];
+    if(admin)items.push(
+      ['manager','▥','最高权限看板','全公司漏斗与排行'],
+      ['team','♙','账号审批','注册审批、启停与邀请码'],
+      ['settings','⚙','评分规则','水果Q分与自动评分'],
+      ['recycle','♲','回收站','30天恢复与永久删除']
+    );
+    const body='<div class="tool-grid">'+items.map(x=>'<button type="button" class="tool-tile" data-r102-view="'+x[0]+'"><b>'+x[1]+' '+x[2]+'</b><span>'+x[3]+'</span></button>').join('')+'<button type="button" class="tool-tile" data-r102-action="selfcheck"><b>✓ 系统自检</b><span>检查会话、按钮与核心API</span></button></div>';
+    modal('工作工具',body);
+  };
+
+  async function selfCheck(){
+    let me=null;try{me=await refreshMyProfile()}catch(e){report(e,'账号检查')}
+    const funcs=['render','closeModal','customerModal','opportunityModal','visitModal','taskModal','accountView','importView','kpiView','remindersView','knowledgeView','managerView','teamView','settingsView'];
+    const frows=funcs.map(n=>{let ok=false;try{ok=typeof eval(n)==='function'||typeof window[n]==='function'}catch{}return [n,ok,ok?'已加载':'缺失']});
+    const apiDefs=[['客户','/rest/v1/customers?select=id&limit=1'],['商机','/rest/v1/opportunities?select=id&limit=1'],['拜访','/rest/v1/visits?select=id&limit=1'],['任务','/rest/v1/customer_tasks?select=id&limit=1'],['知识','/rest/v1/fruit_catalog?select=fruit&limit=1'],['账号','/rest/v1/profiles?select=id&limit=1']];
+    const arows=[];for(const [n,p] of apiDefs){try{await req(p);arows.push([n,true,'API正常'])}catch(e){arows.push([n,false,msgOf(e)])}}
+    const rows=[['当前用户',!!currentUid(),currentUid()||'无法识别'],['账号角色',!!me,(me?.role||'-')+' / '+(me?.approval_status||'-')],...frows,...arows];
+    const bad=rows.filter(x=>!x[1]);
+    modal('R10.2 系统自检','<div class="notice '+(bad.length?'warn':'good')+'"><b>'+(bad.length?'发现 '+bad.length+' 项异常':'✅ 核心自检通过')+'</b><br>当前版本 R10.2；已捕获运行错误 '+STATE.errors.length+' 条。</div>'+rows.map(x=>'<div class="task-card"><div class="task-top"><b>'+esc(x[0])+'</b><span class="badge '+(x[1]?'b-green':'b-red')+'">'+(x[1]?'正常':'异常')+'</span></div><div class="task-meta">'+esc(x[2])+'</div></div>').join('')+(STATE.errors.length?'<div class="card card-pad" style="margin-top:10px"><b>最近错误</b><div class="muted" style="white-space:pre-wrap;margin-top:8px">'+esc(STATE.errors.slice(0,8).map(x=>x.time+' '+x.ctx+' '+x.message).join('\n'))+'</div></div>':''));
+  }
+
+  function mountTools(){
+    try{
+      const who=document.querySelector('#who'),par=who?.parentElement;if(!par)return;
+      let b=document.querySelector('#mobileToolsBtn');
+      if(!b){b=document.createElement('button');b.id='mobileToolsBtn';b.type='button';b.className='btn btn-soft mobile-tools-btn';b.textContent='☰ 工具';par.insertBefore(b,who)}
+      b.onclick=null;b.removeAttribute('onclick');b.dataset.r102Action='tools';
+    }catch(e){report(e,'工具入口')}
+  }
+
+  function mark(){
+    try{
+      const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 单核运行稳定版 · R10.2';
+      let b=document.querySelector('#releaseBadge'),who=document.querySelector('#who');
+      if(!b&&who){b=document.createElement('span');b.id='releaseBadge';b.className='badge b-green';who.parentElement.insertBefore(b,who)}
+      if(b)b.textContent='R10.2';
+    }catch(e){report(e,'版本标记')}
+  }
+
+  function clickableInline(event){
+    const el=event.target.closest('[onclick]');if(!el)return null;
+    if(el.classList?.contains('modal-back')&&event.target!==el)return null;
+    if(el===event.target||el.matches('button,a,.link,.x,[role="button"]'))return el;
+    return null;
+  }
+
+  document.addEventListener('click',async function(event){
+    const routed=event.target.closest('[data-r102-view],[data-r102-action]');
+    const nav=!routed?event.target.closest('[data-view]'):null;
+    const inline=!routed&&!nav?clickableInline(event):null;
+    if(!routed&&!nav&&!inline)return;
+    event.preventDefault();event.stopImmediatePropagation();STATE.clicks++;
+    const el=routed||nav||inline;try{el.style.opacity='.65'}catch{}
+    try{
+      if(routed?.dataset.r102View)await go(routed.dataset.r102View);
+      else if(routed?.dataset.r102Action==='tools')window.mobileTools();
+      else if(routed?.dataset.r102Action==='selfcheck')await selfCheck();
+      else if(nav?.dataset.view)await go(nav.dataset.view);
+      else if(inline){const code=inline.getAttribute('onclick')||'';const r=Function('event',code).call(inline,event);if(r&&typeof r.then==='function')await r}
+    }catch(e){report(e,(el.textContent||el.dataset?.view||'点击').trim().slice(0,50))}
+    finally{setTimeout(()=>{try{el.style.opacity=''}catch{}},120)}
+  },true);
+
+  window.addEventListener('error',e=>report(e.error||e.message,'运行时'));
+  window.addEventListener('unhandledrejection',e=>report(e.reason,'异步操作'));
+  [40,300,800,1600,3000,4500].forEach(ms=>setTimeout(()=>{mountTools();mark()},ms));
+})();

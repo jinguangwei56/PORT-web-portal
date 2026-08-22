@@ -1,0 +1,101 @@
+/* FONKON R7: unified authoritative admin permission layer */
+(function(){
+  const ADMIN_VIEWS=new Set(['manager','team','settings','recycle','selfcheck','knowledge-review']);
+  const original={
+    manager:typeof window.managerView==='function'?window.managerView:null,
+    team:typeof window.teamView==='function'?window.teamView:null,
+    settings:typeof window.settingsView==='function'?window.settingsView:null,
+    recycle:typeof window.recycleView==='function'?window.recycleView:null,
+    selfcheck:typeof window.systemSelfCheckView==='function'?window.systemSelfCheckView:null,
+    knowledgeReview:typeof window.knowledgeReviewView==='function'?window.knowledgeReviewView:null
+  };
+
+  async function fetchAuthoritativeProfile(){
+    if(!ses?.user?.id) throw Error('登录状态已失效，请重新登录');
+    const rows=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(ses.user.id)+'&select=id,name,email,role,active,approval_status,approval_note,force_password_change');
+    if(!rows?.length) throw Error('未找到当前账号权限档案');
+    profile=rows[0];
+    window.__fonkonAuthoritativeProfile=rows[0];
+    return rows[0];
+  }
+  function adminSync(){
+    const p=window.__fonkonAuthoritativeProfile||profile;
+    return !!(p&&p.role==='admin'&&p.active===true&&(p.approval_status==null||p.approval_status==='approved'));
+  }
+  window.fonkonIsAdmin=adminSync;
+  try{isManager=adminSync;window.isManager=adminSync}catch(e){console.warn('isManager unify skipped',e)}
+
+  function noPermission(title,reason){
+    $('#view').innerHTML=pageHead(title,'最高权限状态由数据库实时核验。')+
+      '<div class="card card-pad"><div class="danger-note"><b>当前账号没有最高权限。</b><br>'+esc(reason||'请重新登录或联系系统管理员。')+'</div></div>';
+  }
+  function loadFailure(title,e){
+    $('#view').innerHTML=pageHead(title,'管理员模块加载失败')+
+      '<div class="card card-pad"><div class="danger-note"><b>加载失败：</b>'+esc(e?.message||String(e))+'<br><br>请使用“系统自检”查看具体接口状态。</div></div>';
+  }
+
+  function syncHeaderAndNav(p){
+    try{
+      const who=$('#who');if(who)who.innerHTML='<b>'+esc(p.name||ses?.user?.email||'')+'</b> · '+(p.role==='admin'?'最高权限':'业务员');
+      const isAdmin=adminSync();
+      $$('[data-view="manager"],[data-view="team"],[data-view="settings"]').forEach(b=>b.style.display=isAdmin?'':'none');
+      const names={manager:'最高权限看板',team:'账号审批',settings:'评分规则'};
+      Object.entries(names).forEach(([v,t])=>{const n=document.querySelector('[data-view="'+v+'"] span:last-child');if(n)n.textContent=t});
+    }catch(e){console.warn('admin nav sync failed',e)}
+  }
+
+  async function prepareAdmin(title){
+    const p=await fetchAuthoritativeProfile();
+    syncHeaderAndNav(p);
+    if(!adminSync()){noPermission(title,'角色：'+String(p.role||'未知')+'；状态：'+(p.active?'启用':'停用')+'；审批：'+String(p.approval_status||'未知'));return false}
+    await refreshAll();
+    return true;
+  }
+
+  async function runAdmin(title,fn){
+    try{if(!await prepareAdmin(title))return;if(typeof fn!=='function')throw Error('该管理模块未正确加载');return await fn()}
+    catch(e){loadFailure(title,e)}
+  }
+
+  window.managerView=managerView=async function(){return runAdmin('最高权限看板',original.manager)};
+  window.teamView=teamView=async function(){return runAdmin('账号审批',original.team)};
+  window.settingsView=settingsView=async function(){return runAdmin('评分规则',original.settings)};
+  if(original.recycle)window.recycleView=recycleView=async function(){return runAdmin('30天回收站',original.recycle)};
+  if(original.selfcheck)window.systemSelfCheckView=async function(){return runAdmin('系统自检',original.selfcheck)};
+  if(original.knowledgeReview)window.knowledgeReviewView=async function(){return runAdmin('知识审核台',original.knowledgeReview)};
+
+  const priorRender=window.render;
+  window.render=render=async function(v){
+    try{
+      if(v==='manager')return window.managerView();
+      if(v==='team')return window.teamView();
+      if(v==='settings')return window.settingsView();
+      if(v==='recycle'&&window.recycleView)return window.recycleView();
+      if(v==='selfcheck'&&window.systemSelfCheckView)return window.systemSelfCheckView();
+      return await priorRender(v);
+    }catch(e){
+      if(ADMIN_VIEWS.has(v))return loadFailure(v,e);
+      throw e;
+    }
+  };
+
+  const priorAccount=window.accountView;
+  if(typeof priorAccount==='function')window.accountView=async function(){
+    try{const p=await fetchAuthoritativeProfile();syncHeaderAndNav(p);return priorAccount()}catch(e){loadFailure('账号安全',e)}
+  };
+
+  const priorMobileTools=window.mobileTools;
+  window.mobileTools=async function(){
+    try{const p=await fetchAuthoritativeProfile();syncHeaderAndNav(p);if(typeof priorMobileTools==='function')return priorMobileTools()}
+    catch(e){toast('权限核验失败：'+(e?.message||e))}
+  };
+
+  async function bootstrapAuthz(){
+    try{if(ses?.user?.id){const p=await fetchAuthoritativeProfile();syncHeaderAndNav(p)}}catch(e){console.warn('authz bootstrap failed',e)}
+  }
+  [80,400,1200,2600].forEach(ms=>setTimeout(bootstrapAuthz,ms));
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)bootstrapAuthz()});
+
+  function pin(){try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent=window.innerWidth<=700?'Market OS · 管理权限统一版 R7':'1.2 管理权限统一版 · R7';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R7'}catch{}}
+  [100,800,1800,3200].forEach(ms=>setTimeout(pin,ms));
+})();

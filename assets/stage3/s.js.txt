@@ -1,0 +1,124 @@
+/* FONKON R10.3 authoritative profile + admin + knowledge convergence */
+(function(){
+  const STATE={version:'R10.3',errors:[],profileReads:0};
+  window.FONKON_R103=STATE;
+  const errMsg=e=>String(e?.message||e?.reason?.message||e?.reason||e||'未知错误').slice(0,320);
+  function report(e,ctx='操作'){
+    const m=errMsg(e);STATE.errors.unshift({time:new Date().toISOString(),ctx,message:m});STATE.errors=STATE.errors.slice(0,30);
+    console.error('[FONKON R10.3]',ctx,e);try{toast(ctx+'失败：'+m)}catch{}
+  }
+  function uidFromToken(token){try{let x=String(token||'').split('.')[1]||'';if(!x)return null;x=x.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x)).sub||null}catch{return null}}
+  function currentUid(){return profile?.id||ses?.user?.id||uidFromToken(ses?.access_token)||null}
+  window.fonkonCurrentUid=currentUid;
+
+  let profilePromise=null;
+  async function ensureProfile(force=false){
+    if(!force&&profile?.id&&profile?.role)return profile;
+    if(profilePromise)return profilePromise;
+    profilePromise=(async()=>{
+      const uid=currentUid();
+      if(!uid)throw Error('无法识别当前登录账号，请退出后重新登录一次');
+      const rows=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(uid)+'&select=*');
+      if(!rows?.length)throw Error('当前登录账号没有Profile档案');
+      profile=rows[0];STATE.profileReads++;
+      if(ses&&!ses.user){ses.user={id:uid,email:profile.email||null};localStorage.setItem('fonkon_session',JSON.stringify(ses))}
+      const who=document.querySelector('#who');
+      if(who)who.innerHTML='<b>'+esc(profile.name||profile.email||'当前账号')+'</b> · '+(profile.role==='admin'?'最高权限':'业务员');
+      document.querySelectorAll('[data-view="manager"],[data-view="team"],[data-view="settings"]').forEach(b=>b.style.display=profile.role==='admin'?'':'none');
+      return profile;
+    })().finally(()=>profilePromise=null);
+    return profilePromise;
+  }
+  window.fonkonEnsureProfile=ensureProfile;
+  window.fonkonRefreshMyProfile=()=>ensureProfile(true);
+  window.fonkonIsAdmin=()=>!!(profile?.role==='admin'&&profile?.active===true&&profile?.approval_status==='approved');
+  try{isManager=function(){return window.fonkonIsAdmin()};window.isManager=isManager}catch{}
+
+  async function requireAdmin(refreshData=false){
+    const p=await ensureProfile(true);
+    if(!(p.role==='admin'&&p.active===true&&p.approval_status==='approved'))throw Error('当前账号不是启用且已审批的最高权限账号');
+    if(refreshData&&typeof refreshAll==='function')await refreshAll();
+    return p;
+  }
+  function failPage(title,e){
+    const view=document.querySelector('#view');if(!view)return;
+    view.innerHTML=pageHead(title,'模块加载失败')+'<div class="card card-pad"><div class="danger-note"><b>加载失败：</b>'+esc(errMsg(e))+'</div><div class="muted" style="margin-top:8px">当前账号：'+esc(profile?.name||'-')+'｜角色：'+esc(profile?.role||'-')+'｜状态：'+esc(String(profile?.active))+'｜审批：'+esc(profile?.approval_status||'-')+'</div></div>';
+  }
+
+  const oldManager=typeof managerView==='function'?managerView:null;
+  const oldTeam=typeof teamView==='function'?teamView:null;
+  const oldSettings=typeof settingsView==='function'?settingsView:null;
+  const oldAccount=typeof window.accountView==='function'?window.accountView:null;
+  const oldRecycle=typeof window.recycleView==='function'?window.recycleView:null;
+  const oldImport=typeof window.importView==='function'?window.importView:null;
+  const oldKpi=typeof window.kpiView==='function'?window.kpiView:null;
+  const oldReminders=typeof window.remindersView==='function'?window.remindersView:null;
+
+  window.managerView=managerView=async function(){try{await requireAdmin(true);if(!oldManager)throw Error('最高权限看板模块未加载');return await oldManager()}catch(e){report(e,'最高权限看板');failPage('最高权限看板',e)}};
+  window.teamView=teamView=async function(){try{await requireAdmin(false);if(!oldTeam)throw Error('账号审批模块未加载');return await oldTeam()}catch(e){report(e,'账号审批');failPage('账号审批',e)}};
+  window.settingsView=settingsView=async function(){try{await requireAdmin(false);if(!oldSettings)throw Error('评分规则模块未加载');return await oldSettings()}catch(e){report(e,'评分规则');failPage('评分规则',e)}};
+  if(oldAccount)window.accountView=async function(){try{await ensureProfile(true);return await oldAccount()}catch(e){report(e,'账号安全');failPage('账号安全',e)}};
+  if(oldRecycle)window.recycleView=async function(){try{await requireAdmin(false);return await oldRecycle()}catch(e){report(e,'回收站');failPage('回收站',e)}};
+  if(oldImport)window.importView=async function(){try{await ensureProfile(true);return await oldImport()}catch(e){report(e,'Excel导入');failPage('Excel导入',e)}};
+  if(oldKpi)window.kpiView=async function(){try{await ensureProfile(true);return await oldKpi()}catch(e){report(e,'KPI目标');failPage('KPI目标',e)}};
+  if(oldReminders)window.remindersView=async function(){try{await ensureProfile(true);return await oldReminders()}catch(e){report(e,'提醒中心');failPage('提醒中心',e)}};
+
+  async function safeKnowledgeCenter(tab='fruits'){
+    try{
+      await ensureProfile(true);
+      window.knowledgeTab=tab;
+      const admin=window.fonkonIsAdmin();
+      let actions='<button class="btn btn-primary" onclick="marketIntelModal()">＋市场情报</button><button class="btn btn-soft" onclick="knowledgeSubmissionModal()">＋知识补充</button>'+(admin?'<button class="btn btn-soft" onclick="knowledgeReviewView()">审核台</button>':'');
+      const view=document.querySelector('#view');if(!view)throw Error('知识中心容器不存在');
+      view.innerHTML=pageHead('FONKON 水果知识中心','拜访前查、拜访中用、拜访后沉淀；标准知识与市场情报分层管理。',actions)+
+        '<div class="k-tabs"><button data-k="fruits">水果百科</button><button data-k="origins">产区产季</button><button data-k="clearance">通关检测</button><button data-k="coldchain">冷链品质</button><button data-k="intel">市场情报</button><button data-k="samples">实操统计</button><button data-k="assistant">拜访作战助手</button></div><div id="knowledgeBody"><div class="card k-empty">加载中…</div></div>';
+      Array.from(document.querySelectorAll('.k-tabs button')).forEach(b=>{b.classList.toggle('active',b.dataset.k===tab);b.onclick=()=>safeKnowledgeCenter(b.dataset.k)});
+      if(tab==='origins'){if(typeof knowledgeOrigins!=='function')throw Error('产区产季模块未加载');return await knowledgeOrigins()}
+      if(tab==='clearance'){if(typeof knowledgeClearance!=='function')throw Error('通关检测模块未加载');return await knowledgeClearance()}
+      if(tab==='coldchain'){if(typeof knowledgeColdchain!=='function')throw Error('冷链品质模块未加载');return await knowledgeColdchain()}
+      if(tab==='intel'){if(typeof marketIntelView!=='function')throw Error('市场情报模块未加载');return await marketIntelView()}
+      if(tab==='samples'){if(typeof knowledgeSamples!=='function')throw Error('实操统计模块未加载');return await knowledgeSamples()}
+      if(tab==='assistant'){if(typeof preVisitAssistantView!=='function')throw Error('拜访作战助手未加载');return await preVisitAssistantView()}
+      if(typeof knowledgeFruits!=='function')throw Error('水果百科模块未加载');return await knowledgeFruits();
+    }catch(e){report(e,'知识中心');failPage('FONKON 水果知识中心',e)}
+  }
+  window.knowledgeCenterView=safeKnowledgeCenter;
+  window.knowledgeView=safeKnowledgeCenter;
+
+  const previousRender=render;
+  window.render=render=async function(v){
+    try{
+      if(ses?.access_token)await ensureProfile(false);
+      if(v==='manager')return await window.managerView();
+      if(v==='team')return await window.teamView();
+      if(v==='settings')return await window.settingsView();
+      if(v==='knowledge')return await safeKnowledgeCenter('fruits');
+      if(v==='account'&&window.accountView)return await window.accountView();
+      if(v==='recycle'&&window.recycleView)return await window.recycleView();
+      if(v==='import'&&window.importView)return await window.importView();
+      if(v==='kpi'&&window.kpiView)return await window.kpiView();
+      if(v==='reminders'&&window.remindersView)return await window.remindersView();
+      return await previousRender(v);
+    }catch(e){report(e,'页面 '+v);failPage('页面加载',e)}
+  };
+
+  async function selfCheck103(){
+    let p=null;try{p=await ensureProfile(true)}catch(e){report(e,'Profile检查')}
+    const defs=[['当前用户ID',!!currentUid(),currentUid()||'-'],['Profile',!!p,(p?.role||'-')+' / '+(p?.approval_status||'-')],['最高权限',window.fonkonIsAdmin(),window.fonkonIsAdmin()?'通过':'不通过']];
+    for(const [name,path] of [['客户API','/rest/v1/customers?select=id&limit=1'],['商机API','/rest/v1/opportunities?select=id&limit=1'],['知识API','/rest/v1/fruit_catalog?select=fruit&limit=1'],['账号API','/rest/v1/profiles?select=id&limit=1'],['评分规则API','/rest/v1/fruit_value_rules?select=id&limit=1']]){try{await req(path);defs.push([name,true,'正常'])}catch(e){defs.push([name,false,errMsg(e)])}}
+    const bad=defs.filter(x=>!x[1]);
+    modal('R10.3 系统自检','<div class="notice '+(bad.length?'warn':'good')+'"><b>'+(bad.length?'发现 '+bad.length+' 项异常':'✅ 权限、知识与核心API自检通过')+'</b><br>Profile实时读取 '+STATE.profileReads+' 次；捕获错误 '+STATE.errors.length+' 条。</div>'+defs.map(x=>'<div class="task-card"><div class="task-top"><b>'+esc(x[0])+'</b><span class="badge '+(x[1]?'b-green':'b-red')+'">'+(x[1]?'正常':'异常')+'</span></div><div class="task-meta">'+esc(x[2])+'</div></div>').join(''));
+  }
+  window.fonkonSelfCheck103=selfCheck103;
+
+  const oldMobileTools=window.mobileTools;
+  window.mobileTools=function(){
+    const admin=window.fonkonIsAdmin();
+    const items=[['account','🔐','账号安全','密码、账号状态与安全'],['import','⇧','Excel导入','客户/商机批量导入'],['kpi','▦','KPI目标','目标与完成率'],['reminders','🔔','提醒中心','跟进/红灯/旺季/审批'],['knowledge','⌘','知识中心','水果/口岸/检测/市场情报']];
+    if(admin)items.push(['manager','▥','最高权限看板','全公司漏斗与排行'],['team','♙','账号审批','注册审批、启停与邀请码'],['settings','⚙','评分规则','水果Q分与自动评分'],['recycle','♲','回收站','30天恢复与永久删除']);
+    modal('工作工具','<div class="tool-grid">'+items.map(x=>'<button type="button" class="tool-tile" data-r102-view="'+x[0]+'"><b>'+x[1]+' '+x[2]+'</b><span>'+x[3]+'</span></button>').join('')+'<button type="button" class="tool-tile" onclick="fonkonSelfCheck103()"><b>✓ R10.3系统自检</b><span>实时检查账号、权限和核心API</span></button></div>')
+  };
+
+  function mark(){try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 权限知识收口版 · R10.3';let b=document.querySelector('#releaseBadge'),who=document.querySelector('#who');if(!b&&who){b=document.createElement('span');b.id='releaseBadge';b.className='badge b-green';who.parentElement.insertBefore(b,who)}if(b)b.textContent='R10.3'}catch(e){report(e,'版本标记')}}
+  [50,350,900,1800,3500].forEach(ms=>setTimeout(async()=>{mark();try{if(ses?.access_token)await ensureProfile(false)}catch{}},ms));
+})();

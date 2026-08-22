@@ -8,12 +8,10 @@ ient(135deg,#082f49,#0f766e);color:#fff;border-radius:18px;padding:18px;margin-b
   <div class="auth-card">
     <section class="auth-hero">
       <div class="logo">FONKON</div>
-      <div class="hero-title">用数据，而不是感觉<br>开发水果进口市场。</div>
-      <div class="hero-copy">Market OS 1.2 把15分钟客户访谈转化为客户价值、商机热度、陆海切换机会和下一步作战动作。</div>
-      <div class="hero-points"><div class="hero-point"><span class="dot">✓</span><span>客户事实自动计算 CV / DC / DP</span></div><div class="hero-point"><span class="dot">✓</span><span>东货 LSOI / 西货 PSOI 自动识别切换窗口</span></div><div class="hero-point"><span class="dot">✓</span><span>主管看漏斗、业务员排行和试柜转化</span></div></div>
+      <div class="hero-title">数据量化，<br>链接全球水果价值。</div>
     </section>
     <section class="auth-form">
-      <div class="eyebrow">FONKON MARKET OS</div><div class="title">市场作战系统 1.2</div><div class="muted">正式版｜客户价值 + 商机热度 + 供应链机会引擎</div>
+      <div class="eyebrow">FONKON MARKET OS</div><div class="title">市场作战系统</div>
       <div class="tabs"><button id="tabLogin" class="tab active">登录</button><button id="tabRegister" class="tab">首次注册</button></div>
       <form id="loginForm" class="grid"><div class="field span12"><label>企业邮箱</label><input id="loginEmail" type="email" required></div><div class="field span12"><label>密码</label><input id="loginPassword" type="password" required></div><div class="field span12"><button class="btn btn-primary btn-full">进入作战中心</button></div></form>
       <form id="registerForm" class="grid hide"><div class="field span12"><label>姓名</label><input id="regName" required></div><div class="field span12"><label>邮箱</label><input id="regEmail" type="email" required></div><div class="field span12"><label>密码（至少6位）</label><input id="regPassword" type="password" minlength="6" required></div><div class="field span12"><label>企业邀请码</label><input id="regCode" required></div><div class="field span12"><button class="btn btn-primary btn-full">注册并激活</button></div></form>
@@ -22,7 +20,7 @@ ient(135deg,#082f49,#0f766e);color:#fff;border-radius:18px;padding:18px;margin-b
   </div>
 </div>
 <div id="app" class="app hide">
-  <header class="topbar"><div class="top-left"><div class="brand-mark">F</div><div><div class="brand-name">FONKON Market OS</div><div class="top-meta">数据驱动进口水果市场开发</div></div></div><div style="display:flex;align-items:center;gap:10px"><div id="who" style="font-size:12px"></div><button id="logout" class="btn btn-soft">退出</button></div></header>
+  <header class="topbar"><div class="top-left"><div class="brand-mark">F</div><div class="brand-name">FONKON Market OS</div></div><div style="display:flex;align-items:center;gap:10px"><div id="who" style="font-size:12px"></div><button id="logout" class="btn btn-soft">退出</button></div></header>
   <div class="layout">
     <aside class="sidebar"><div class="nav-section">作战</div><button class="nav-btn active" data-view="dashboard"><span class="ico">⌂</span><span>今日作战</span></button><button class="nav-btn" data-view="customers"><span class="ico">◎</span><span>客户</span></button><button class="nav-btn" data-view="opportunities"><span class="ico">◇</span><span>商机</span></button><button class="nav-btn" data-view="visits"><span class="ico">✎</span><span>拜访</span></button><button class="nav-btn" data-view="tasks"><span class="ico">✓</span><span>任务</span></button><div class="nav-section">分析</div><button class="nav-btn" data-view="manager"><span class="ico">▥</span><span>主管看板</span></button><button class="nav-btn" data-view="knowledge"><span class="ico">⌘</span><span>行业数据库</span></button><div class="nav-section">系统</div><button class="nav-btn" data-view="team"><span class="ico">♙</span><span>团队账号</span></button><button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>评分规则</span></button></aside>
     <main class="main"><div id="view"></div></main>

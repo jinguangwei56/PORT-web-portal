@@ -1,0 +1,40 @@
+/* FONKON R6: authoritative profile refresh + admin tools */
+(function(){
+ async function freshProfile(){
+  if(!ses?.user?.id) throw Error('登录状态已失效，请重新登录');
+  const a=await req('/rest/v1/profiles?id=eq.'+encodeURIComponent(ses.user.id)+'&select=*');
+  if(!a.length) throw Error('未找到当前账号权限档案');
+  profile=a[0];
+  return profile;
+ }
+ window.fonkonRefreshMyProfile=freshProfile;
+
+ window.accountView=async function(){
+  $('#view').innerHTML=pageHead('账号安全','正在核验当前账号权限…')+'<div class="card card-pad"><div class="notice">正在从数据库重新读取账号角色和状态…</div></div>';
+  try{
+   const p=await freshProfile();
+   const role=p.role==='admin'?'最高权限':p.role==='sales'?'业务员':'未知角色';
+   const status=p.active?'启用':'停用';
+   const approval=p.approval_status==='approved'?'已审批':p.approval_status==='pending'?'待审批':p.approval_status==='rejected'?'已驳回':'未知';
+   let html=pageHead('账号安全','密码、账号状态与数据安全。','<button class="btn btn-primary" onclick="passwordModal(false)">修改密码</button>');
+   html+='<div class="two"><div class="card card-pad"><div class="section-title"><h2>我的账号</h2></div><div class="security-box"><b>'+esc(p.name||'')+'</b><div class="muted">'+esc(p.email||ses?.user?.email||'')+'</div><div style="margin-top:10px">角色：<b>'+esc(role)+'</b> · 状态：<b>'+esc(status)+'</b> · '+esc(approval)+'</div></div></div><div class="card card-pad"><div class="section-title"><h2>安全规则</h2></div><div class="help">• 业务员只读取自己的客户数据<br>• 密码重置后必须首次登录改密<br>• 核心数据不允许业务员永久删除<br>• 最高权限操作会留审计记录</div></div></div>';
+   if(p.role==='admin') html+='<div class="card card-pad section"><div class="section-title"><h2>最高权限工具</h2></div><div class="tool-grid"><button class="tool-tile" data-fk-view="team"><b>♙ 账号审批</b><span>审批/停用/邀请码/重置密码</span></button><button class="tool-tile" data-fk-view="recycle"><b>♲ 回收站</b><span>恢复或永久删除归档客户</span></button><button class="tool-tile" data-fk-view="selfcheck"><b>✓ 系统自检</b><span>检查按钮与核心API</span></button><button class="tool-tile" data-fk-view="manager"><b>▥ 最高权限看板</b><span>查看全公司漏斗与业务员表现</span></button></div></div>';
+   $('#view').innerHTML=html;
+  }catch(e){
+   $('#view').innerHTML=pageHead('账号安全','权限状态读取失败')+'<div class="card card-pad"><div class="danger-note"><b>不能确认当前账号权限。</b><br>'+esc(e.message)+'<br><br>请退出后重新登录，不再把未知状态误显示为“业务员·停用”。</div></div>';
+  }
+ };
+
+ window.mobileTools=async function(){
+  try{await freshProfile()}catch(e){return toast('权限核验失败：'+e.message)}
+  const admin=profile.role==='admin';
+  const tile=(v,ico,t,s)=>'<button class="tool-tile" data-fk-view="'+v+'"><b>'+ico+' '+t+'</b><span>'+s+'</span></button>';
+  modal('工作工具','<div class="tool-grid">'+tile('account','🔐','账号安全','查看真实角色/状态与修改密码')+tile('import','⇧','Excel导入','客户/商机批量导入')+tile('kpi','▦','KPI目标','目标与完成率')+tile('reminders','🔔','提醒中心','跟进/红灯/旺季/审批')+(admin?tile('team','♙','账号审批','审批、停用、邀请码、密码重置')+tile('manager','▥','最高权限看板','全公司漏斗与业务员排行')+tile('recycle','♲','回收站','30天恢复与永久删除')+tile('selfcheck','✓','系统自检','检查按钮、函数和API'):'')+tile('knowledge','⌘','知识中心','水果/口岸/检测/市场情报')+'</div>');
+ };
+
+ const oldRender=window.render;
+ if(typeof oldRender==='function') window.render=function(v){if(v==='account')return window.accountView();return oldRender(v)};
+
+ function pin(){try{const tm=document.querySelector('.top-meta');if(tm&&window.innerWidth<=700)tm.textContent='Market OS · 权限修正版 R6';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R6'}catch{}}
+ [80,500,1500,3000].forEach(ms=>setTimeout(pin,ms));
+})();

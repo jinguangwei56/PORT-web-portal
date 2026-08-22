@@ -1,0 +1,54 @@
+/* FONKON Stage3 A: password center + archive/recycle */
+(function(){
+const style=document.createElement('style');style.textContent=`.stage3-toolbar{display:flex;gap:8px;flex-wrap:wrap}.recycle-card{border:1px solid var(--line);border-radius:14px;padding:12px;margin:8px 0}.security-box{background:#f8fafc;border:1px solid var(--line);border-radius:14px;padding:14px}.danger-note{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:10px;font-size:11px}`;document.head.appendChild(style);
+
+const oldRefreshAll=refreshAll;
+refreshAll=async function(){
+ const ps=['/rest/v1/customers?archived_at=is.null&select=*&order=updated_at.desc&limit=1000','/rest/v1/opportunities?archived_at=is.null&select=*&order=final_priority.desc&limit=1000','/rest/v1/visits?archived_at=is.null&select=*&order=visited_at.desc&limit=1000','/rest/v1/customer_tasks?archived_at=is.null&select=*&order=due_at.asc.nullslast&limit=1000','/rest/v1/data_evidence?select=*&order=observed_at.desc&limit=1000'];
+ if(profile?.role==='admin')ps.push('/rest/v1/profiles?select=*&order=name.asc');
+ const a=await Promise.all(ps.map(p=>req(p)));[customers,opportunities,visits,tasks,evidence]=a;profiles=a[5]||[profile];
+ if(typeof window.fonkonAfterRefresh==='function')await window.fonkonAfterRefresh();
+};
+
+function injectNav(){
+ const side=document.querySelector('.sidebar');if(side&&!side.querySelector('[data-view="account"]')){
+  const sec=document.createElement('div');sec.className='nav-section';sec.textContent='工具';side.appendChild(sec);
+  const mk=(v,ico,txt)=>{const b=document.createElement('button');b.className='nav-btn';b.dataset.view=v;b.innerHTML='<span class="ico">'+ico+'</span><span>'+txt+'</span>';b.onclick=()=>{setNav(v);render(v)};side.appendChild(b)};
+  mk('account','♢','账号安全');mk('import','⇧','Excel导入');mk('kpi','▦','KPI目标');mk('reminders','◉','提醒中心');if(profile?.role==='admin')mk('recycle','♲','回收站');
+ }
+}
+const oldShowApp=showApp;showApp=function(){oldShowApp();if(ses&&profile){injectNav();setTimeout(()=>{if(profile.force_password_change)passwordModal(true)},80)}};
+
+async function changePassword(newPassword){
+ if(!ses?.access_token)throw Error('请先登录');
+ const r=await fetch(U+'/auth/v1/user',{method:'PUT',headers:{apikey:K,authorization:'Bearer '+ses.access_token,'content-type':'application/json'},body:JSON.stringify({password:newPassword})});
+ const j=await r.json();if(!r.ok)throw Error(j?.message||j?.error_description||'修改密码失败');
+ try{await req('/rest/v1/profiles?id=eq.'+ses.user.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({force_password_change:false})});profile.force_password_change=false}catch{}
+ return j;
+}
+window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置自己的新密码后才能继续使用。':'密码至少8位，建议同时包含字母、数字和符号。')+'</div>'+input('password','新密码','','password','span12','minlength="8" required')+input('password2','再次输入','','password','span12','minlength="8" required')+'<div class="span12"><button class="btn btn-primary">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
+ if(mandatory){const x=document.querySelector('.modal .x');if(x)x.style.display='none';const back=document.querySelector('.modal-back');if(back)back.onclick=null}
+ $('#pwdForm').onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.password!==x.password2)return toast('两次密码不一致');try{await changePassword(x.password);closeModal();toast('密码已修改')}catch(z){toast(z.message)}};
+};
+
+window.forgotPassword=async function(){const email=$('#loginEmail')?.value?.trim();if(!email)return toast('先填写注册邮箱');try{const r=await fetch(U+'/auth/v1/recover',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({email,redirect_to:location.origin+location.pathname})});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j?.message||'发送失败');$('#authMsg').textContent='如果邮箱已注册，密码重置邮件会发送到该邮箱。请按邮件链接设置新密码。'}catch(e){$('#authMsg').textContent='自助邮件重置暂不可用，请联系最高权限重置临时密码。'}};
+const loginForm=document.querySelector('#loginForm');if(loginForm&&!document.querySelector('#forgotPwd')){const box=document.createElement('div');box.className='field span12';box.style.textAlign='right';box.innerHTML='<button id="forgotPwd" type="button" class="btn btn-soft">忘记密码？</button>';loginForm.insertBefore(box,loginForm.lastElementChild);$('#forgotPwd').onclick=forgotPassword}
+
+async function handleRecoveryHash(){const h=new URLSearchParams(location.hash.replace(/^#/,''));if(h.get('type')!=='recovery'||!h.get('access_token'))return;const token=h.get('access_token');history.replaceState(null,'',location.pathname+location.search);modal('设置新密码','<form id="recoverForm" class="grid">'+input('p1','新密码','','password','span12','minlength="8" required')+input('p2','再次输入','','password','span12','minlength="8" required')+'<div class="span12"><button class="btn btn-primary">保存新密码</button></div></form>');$('#recoverForm').onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.p1!==x.p2)return toast('两次密码不一致');try{const r=await fetch(U+'/auth/v1/user',{method:'PUT',headers:{apikey:K,authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({password:x.p1})});const j=await r.json();if(!r.ok)throw Error(j.message||'重置失败');closeModal();toast('密码已重置，请重新登录')}catch(z){toast(z.message)}}}
+setTimeout(handleRecoveryHash,300);
+
+window.accountView=function(){let html=pageHead('账号安全','密码、账号状态与数据安全。','<button class="btn btn-primary" onclick="passwordModal(false)">修改密码</button>');html+='<div class="two"><div class="card card-pad"><div class="section-title"><h2>我的账号</h2></div><div class="security-box"><b>'+esc(profile?.name||'')+'</b><div class="muted">'+esc(profile?.email||ses?.user?.email||'')+'</div><div style="margin-top:10px">角色：'+(profile?.role==='admin'?'最高权限':'业务员')+' · 状态：'+(profile?.active?'启用':'停用')+'</div></div></div><div class="card card-pad"><div class="section-title"><h2>安全规则</h2></div><div class="help">• 业务员只读取自己的客户数据<br>• 密码重置后必须首次登录改密<br>• 核心数据不允许业务员永久删除<br>• 最高权限操作会留审计记录</div></div></div>';$('#view').innerHTML=html};
+
+window.archiveCustomer=async function(id){const reason=prompt('归档原因','暂不跟进/客户无效');if(reason===null)return;try{await req('/rest/v1/rpc/fonkon_archive_customer',{method:'POST',body:JSON.stringify({cid:id,reason})});await refreshAll();closeModal();toast('客户已进入30天回收站');customersView()}catch(e){toast(e.message)}};
+const oldOpenCustomer=typeof openCustomer==='function'?openCustomer:null;if(oldOpenCustomer){openCustomer=async function(id){await oldOpenCustomer(id);setTimeout(()=>{const a=document.querySelector('.detail-actions');if(a&&!a.querySelector('.archive-customer'))a.insertAdjacentHTML('beforeend','<button class="btn btn-soft archive-customer" onclick="archiveCustomer(\''+id+'\')">归档客户</button>')},30)}}
+
+window.recycleView=async function(){if(profile?.role!=='admin'){return $('#view').innerHTML=pageHead('回收站','仅最高权限可查看')+'<div class="card empty">无权限</div>'}try{const rows=await req('/rest/v1/customers?archived_at=not.is.null&select=*&order=archived_at.desc&limit=500');let html=pageHead('30天回收站','归档客户可恢复；满30天后最高权限才能永久删除。');html+='<div class="card card-pad">'+(rows.length?rows.map(c=>{const days=Math.floor((Date.now()-new Date(c.archived_at).getTime())/86400000);return '<div class="recycle-card"><div class="task-top"><div><b>'+esc(c.company_name)+'</b><div class="muted">'+esc(c.contact_name||'')+' · 归档 '+days+' 天 · '+esc(c.archive_reason||'无原因')+'</div></div><div class="actions"><button class="btn btn-primary" onclick="restoreCustomer(\''+c.id+'\')">恢复</button>'+(days>=30?'<button class="btn btn-soft" onclick="purgeCustomer(\''+c.id+'\')">永久删除</button>':'<span class="muted">'+(30-days)+'天后可永久删除</span>')+'</div></div></div>'}).join(''):'<div class="empty">回收站为空</div>')+'</div>';$('#view').innerHTML=html}catch(e){toast(e.message)}};
+window.restoreCustomer=async id=>{try{await req('/rest/v1/rpc/fonkon_restore_customer',{method:'POST',body:JSON.stringify({cid:id})});toast('已恢复');recycleView()}catch(e){toast(e.message)}};
+window.purgeCustomer=async id=>{if(!confirm('永久删除后无法恢复，确认？'))return;try{await req('/rest/v1/rpc/fonkon_purge_customer',{method:'POST',body:JSON.stringify({cid:id})});toast('已永久删除');recycleView()}catch(e){toast(e.message)}};
+
+const oldTeamView=teamView;teamView=async function(){await oldTeamView();if(profile?.role!=='admin')return;const sales=(profiles||[]).filter(p=>p.role==='sales'&&p.approval_status==='approved');const view=$('#view');if(view&&sales.length&&!document.querySelector('#pwdAdminBox'))view.insertAdjacentHTML('beforeend','<div id="pwdAdminBox" class="card card-pad section"><div class="section-title"><h2>密码重置</h2><span class="hint">生成一次性临时密码；业务员下次登录必须改密</span></div>'+sales.map(p=>'<div class="rank"><div class="rank-main"><b>'+esc(p.name||p.email)+'</b><div>'+esc(p.email||'')+'</div></div><button class="btn btn-soft" onclick="adminResetPassword(\''+p.id+'\')">重置密码</button></div>').join('')+'</div>')};
+window.adminResetPassword=async id=>{if(!confirm('确认重置该业务员密码？原密码将立即失效。'))return;try{const r=await edge({action:'admin_reset_password',user_id:id});modal('临时密码已生成','<div class="notice">请通过安全渠道单独发给业务员。业务员登录后系统会强制修改。</div><div class="security-box"><div class="muted">账号</div><b>'+esc(r.email||'')+'</b><div class="muted" style="margin-top:10px">临时密码</div><div style="font-size:22px;font-weight:950;letter-spacing:1px">'+esc(r.temporary_password)+'</div></div><div style="margin-top:12px"><button class="btn btn-primary" onclick="navigator.clipboard.writeText(\''+String(r.temporary_password).replace(/'/g,"\\'")+'\');toast(\'已复制\')">复制临时密码</button></div>');}catch(e){toast(e.message)}};
+
+const oldRender=render;render=function(v){if(v==='account')return accountView();if(v==='recycle')return recycleView();return oldRender(v)};
+setTimeout(()=>{if(profile)injectNav()},400);
+})();

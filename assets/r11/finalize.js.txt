@@ -1,0 +1,15 @@
+/* FONKON R11 final convergence guard: preserve security UX and ensure one visible runtime owner. */
+(function(){
+  'use strict';
+  const S={passwordPrompted:false};
+  const escR=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  function polish(){try{if(typeof window.__r11MobilePolish==='function')window.__r11MobilePolish()}catch(e){console.warn('[R11] mobile polish',e)}}
+  function lockLegacyClicks(){try{Array.from(document.querySelectorAll('.nav-btn,.bottom-nav button')).forEach(b=>{b.onclick=null;b.removeAttribute('onclick')})}catch(e){console.warn('[R11] click lock',e)}}
+  function forcePassword(){try{if(profile?.force_password_change&&!S.passwordPrompted&&typeof window.passwordModal==='function'){S.passwordPrompted=true;Promise.resolve().then(()=>window.passwordModal(true))}}catch(e){console.error('[R11] force password',e)}}
+  const baseShow=window.showApp;
+  window.showApp=function(){const r=baseShow?.();lockLegacyClicks();polish();forcePassword();return r};
+  const logout=document.querySelector('#logout');if(logout){const baseLogout=logout.onclick;logout.onclick=e=>{S.passwordPrompted=false;return baseLogout?.call(logout,e)}}
+  window.fonkonR11SelfCheckUI=async function(){try{const x=await window.fonkonR11SelfCheck(),items=[...(x.functions||[]).map(r=>[r[0],r[1],r[1]?'已加载':'缺失']),...(x.api||[]).map(r=>[r[0]+' API',r[1],r[1]?'正常':(r[2]||'异常')])],bad=items.filter(r=>!r[1]),reqs=x.requests||{};modal('R11 系统自检','<div class="notice '+(bad.length?'warn':'good')+'"><b>'+(bad.length?'发现 '+bad.length+' 项异常':'✅ R11 核心自检通过')+'</b><br>唯一启动器 / 唯一路由 / 会话守护 / ROUTE1业务模块。请求去重 '+(reqs.deduped||0)+' 次，缓存命中 '+(reqs.cacheHits||0)+' 次，聚合计数优化 '+(reqs.countOptimized||0)+' 次。</div>'+items.map(r=>'<div class="task-card"><div class="task-top"><b>'+escR(r[0])+'</b><span class="badge '+(r[1]?'b-green':'b-red')+'">'+(r[1]?'正常':'异常')+'</span></div><div class="task-meta">'+escR(r[2])+'</div></div>').join('')+((x.errors||[]).length?'<div class="card card-pad" style="margin-top:10px"><b>最近R11错误</b><div class="muted" style="white-space:pre-wrap;margin-top:8px">'+escR(x.errors.map(e=>e.at+' '+e.where+' '+e.message).join('\n'))+'</div></div>':''))}catch(e){try{toast('R11自检失败：'+String(e?.message||e))}catch{}}};
+  window.fonkonR11Finalize=function(){lockLegacyClicks();polish();forcePassword();try{const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 市场作战体系 · R11 稳定收口 / ROUTE1';const b=document.querySelector('#releaseBadge');if(b)b.textContent='R11'}catch{}};
+  setTimeout(window.fonkonR11Finalize,0);
+})();

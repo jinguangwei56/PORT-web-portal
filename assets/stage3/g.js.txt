@@ -1,83 +1,51 @@
-/* FONKON Stage3 G: mobile-first UI polish */
+/* FONKON Stage3 G: mobile-first UI polish - stable */
 (function(){
  const css=document.createElement('style');
  css.textContent=`
  @media(max-width:700px){
   html,body{width:100%;max-width:100%;overflow-x:hidden}
-  .topbar{height:64px;padding:0 10px;gap:8px;overflow:visible}
+  .topbar{height:60px;padding:0 10px;gap:8px;overflow:visible}
   .top-left{flex:1;min-width:0;gap:9px;overflow:hidden}
-  .brand-mark{width:36px;height:36px;border-radius:11px;flex:0 0 36px;font-size:17px}
-  .brand-name{font-size:16px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand-mark{width:34px;height:34px;border-radius:10px;flex:0 0 34px;font-size:16px}
+  .brand-name{font-size:15px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top-meta{font-size:9px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;margin-top:3px}
   .topbar>div:last-child{display:flex!important;align-items:center!important;justify-content:flex-end;gap:5px!important;flex:0 0 auto;min-width:0}
   #who{display:none!important}
   #releaseBadge{font-size:9px!important;padding:3px 6px!important;margin:0 0 0 2px!important;flex:0 0 auto;white-space:nowrap}
-  #mobileToolsBtn,#reminderBell,#logout{width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important;padding:0!important;border-radius:12px!important;display:grid!important;place-items:center!important;white-space:nowrap!important;overflow:hidden!important;line-height:1!important;position:relative;box-shadow:none!important}
-  #mobileToolsBtn{font-size:0!important}
-  #mobileToolsBtn:before{content:'☰';font-size:19px;line-height:1}
-  #reminderBell{font-size:19px!important}
-  #reminderBell b{position:absolute;right:3px;top:2px;min-width:15px;height:15px;border-radius:999px;background:#ef4444;color:#fff!important;display:grid;place-items:center;font-size:8px!important;padding:0 3px;margin:0!important}
-  #logout{font-size:0!important}
-  #logout:before{content:'↪';font-size:20px;line-height:1}
-
-  .main{padding:14px 10px 92px}
-  .page-head{margin-bottom:13px;gap:10px}
-  .page-title{font-size:22px;line-height:1.2}
-  .page-sub{font-size:11px;line-height:1.55}
-  .page-head>.actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .page-head>.actions .btn{width:100%;min-height:44px;padding:9px 10px;font-size:12px;white-space:normal;text-align:center}
-  .page-head>.actions .btn:only-child{grid-column:1/-1}
-
-  .kpis{gap:8px;margin-bottom:10px}
-  .kpi{min-height:118px;padding:14px}
-  .kpi-label{font-size:11px}.kpi-value{font-size:27px;margin-top:7px}.kpi-foot{font-size:10px;line-height:1.35}
-  .card{border-radius:16px}.card-pad{padding:14px}.section{margin-top:10px}
-  .section-title{align-items:flex-start}.section-title h2{font-size:15px;line-height:1.35}.section-title .hint{font-size:10px;line-height:1.4;text-align:right}
-  .two,.three{display:block}.two>*,.three>*{margin-bottom:10px}
-  .task-card,.op-card{padding:12px;border-radius:13px}.task-top,.op-head{align-items:flex-start}
-  .op-grid{gap:6px}.mini{padding:8px 7px}.mini b{font-size:16px}.mini span{font-size:9px}
-  .score-row{gap:6px}.score-pill{padding:8px}.score-pill b{font-size:17px}
-
-  .filters{display:grid;grid-template-columns:1fr;gap:8px}.filters input,.filters select{min-height:42px;font-size:13px}
-  .table-wrap{width:calc(100vw - 20px);max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
-  .table{min-width:760px}.table th,.table td{padding:10px 8px;font-size:11px}
-
+  #mobileToolsBtn,#reminderBell,#logout{width:38px!important;height:38px!important;min-width:38px!important;max-width:38px!important;padding:0!important;border-radius:11px!important;display:grid!important;place-items:center!important;white-space:nowrap!important;overflow:hidden!important;line-height:1!important;position:relative;box-shadow:none!important}
+  #mobileToolsBtn{font-size:0!important}#mobileToolsBtn:before{content:'☰';font-size:18px;line-height:1}
+  #reminderBell{font-size:18px!important}
+  #reminderBell b{position:absolute;right:2px;top:2px;min-width:15px;height:15px;border-radius:999px;background:#ef4444;color:#fff!important;display:grid;place-items:center;font-size:8px!important;padding:0 3px;margin:0!important}
+  #logout{font-size:0!important}#logout:before{content:'↪';font-size:19px;line-height:1}
+  .main{padding:14px 10px 92px}.page-head{margin-bottom:13px;gap:10px}.page-title{font-size:22px;line-height:1.2}.page-sub{font-size:11px;line-height:1.55}
+  .page-head>.actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.page-head>.actions .btn{width:100%;min-height:44px;padding:9px 10px;font-size:12px;white-space:normal;text-align:center}.page-head>.actions .btn:only-child{grid-column:1/-1}
+  .kpis{gap:8px;margin-bottom:10px}.kpi{min-height:112px;padding:13px}.kpi-label{font-size:11px}.kpi-value{font-size:26px;margin-top:7px}.kpi-foot{font-size:10px;line-height:1.35}
+  .card{border-radius:16px}.card-pad{padding:14px}.section{margin-top:10px}.section-title{align-items:flex-start}.section-title h2{font-size:15px;line-height:1.35}.section-title .hint{font-size:10px;line-height:1.4;text-align:right}
+  .two,.three{display:block}.two>*,.three>*{margin-bottom:10px}.task-card,.op-card{padding:12px;border-radius:13px}.task-top,.op-head{align-items:flex-start}
+  .op-grid{gap:6px}.mini{padding:8px 7px}.mini b{font-size:16px}.mini span{font-size:9px}.score-row{gap:6px}.score-pill{padding:8px}.score-pill b{font-size:17px}
+  .filters{display:grid;grid-template-columns:1fr;gap:8px}.filters input,.filters select{min-height:42px;font-size:13px}.table-wrap{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}.table{min-width:720px}.table th,.table td{padding:10px 8px;font-size:11px}
   .modal-back{align-items:end;padding:0}.modal{width:100%;max-width:100%;border-radius:20px 20px 0 0;max-height:92dvh}.modal-head{padding:13px 14px}.modal-body{padding:14px 12px calc(18px + env(safe-area-inset-bottom))}.modal-head h3{font-size:16px;margin:0}.x{width:38px;height:38px;flex:0 0 38px}
-  .grid{gap:10px}.field input,.field select,.field textarea{min-height:44px;font-size:14px;padding:11px}.field textarea{min-height:92px}.field label{font-size:11px}
-  .span3,.span4,.span6,.span8,.span12{grid-column:1/-1!important}
+  .grid{gap:10px}.field input,.field select,.field textarea{min-height:44px;font-size:14px;padding:11px}.field textarea{min-height:92px}.field label{font-size:11px}.span3,.span4,.span6,.span8,.span12{grid-column:1/-1!important}
   .modal .actions,.stage3-toolbar,.csv-box{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;width:100%}.modal .actions .btn,.stage3-toolbar .btn,.csv-box .btn{width:100%;min-height:44px}
-
-  .bottom-nav{height:68px;padding:6px 5px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -8px 24px rgba(15,23,42,.06)}
-  .bottom-nav button{min-width:0;padding:5px 1px;font-size:9px;line-height:1.1}.bottom-nav button b{font-size:19px;margin-bottom:3px}
-  .mobile-fab{right:14px;bottom:82px;width:54px;height:54px;border-radius:17px}
-
+  .bottom-nav{height:68px;padding:6px 5px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -8px 24px rgba(15,23,42,.06)}.bottom-nav button{min-width:0;padding:5px 1px;font-size:9px;line-height:1.1}.bottom-nav button b{font-size:19px;margin-bottom:3px}.mobile-fab{right:14px;bottom:82px;width:54px;height:54px;border-radius:17px}
   .tool-grid{grid-template-columns:1fr 1fr!important;gap:9px!important}.tool-tile{min-height:92px;padding:13px!important}.tool-tile b{font-size:14px!important;line-height:1.3}.tool-tile span{font-size:10px!important}
-  .knowledge-block{overflow:hidden}.knowledge-row{word-break:break-word}.k-tabs{overflow-x:auto;display:flex;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:4px}.k-tabs button{white-space:nowrap;flex:0 0 auto}
-  .stat-grid{grid-template-columns:1fr 1fr!important;gap:7px}.stat-box{padding:9px}.stat-box b{font-size:14px}
+  .knowledge-block{overflow:hidden}.knowledge-row{word-break:break-word}.k-tabs{overflow-x:auto;display:flex;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:4px}.k-tabs button{white-space:nowrap;flex:0 0 auto}.stat-grid{grid-template-columns:1fr 1fr!important;gap:7px}.stat-box{padding:9px}.stat-box b{font-size:14px}
  }
- @media(max-width:380px){
-  .topbar{padding:0 7px}.brand-mark{width:34px;height:34px;flex-basis:34px}.brand-name{font-size:15px}.top-meta{max-width:112px;font-size:8px}
-  #mobileToolsBtn,#reminderBell,#logout{width:37px!important;height:37px!important;min-width:37px!important;max-width:37px!important}
-  #releaseBadge{display:none!important}.main{padding-left:8px;padding-right:8px}.page-head>.actions{grid-template-columns:1fr}
-  .kpi{min-height:112px;padding:12px}.kpi-value{font-size:24px}
- }
+ @media(max-width:380px){.topbar{padding:0 7px}.brand-mark{width:32px;height:32px;flex-basis:32px}.brand-name{font-size:14px}.top-meta{max-width:104px;font-size:8px}#mobileToolsBtn,#reminderBell,#logout{width:35px!important;height:35px!important;min-width:35px!important;max-width:35px!important}#releaseBadge{display:none!important}.main{padding-left:8px;padding-right:8px}.page-head>.actions{grid-template-columns:1fr}.kpi{min-height:108px;padding:12px}.kpi-value{font-size:24px}}
  `;
  document.head.appendChild(css);
-
  function polishMobileHeader(){
-  const mobile=window.innerWidth<=700;
-  const bn=document.querySelector('.brand-name'),tm=document.querySelector('.top-meta'),left=document.querySelector('.top-left'),who=document.querySelector('#who'),actions=who?.parentElement;
-  if(bn){bn.dataset.fullText=bn.dataset.fullText||bn.textContent;if(mobile)bn.textContent='FONKON';else if(bn.dataset.fullText)bn.textContent=bn.dataset.fullText}
-  if(tm){tm.dataset.fullText=tm.dataset.fullText||tm.textContent;if(mobile)tm.textContent='Market OS · 运营增强版 R3';else if(tm.dataset.fullText)tm.textContent=tm.dataset.fullText}
-  const badge=document.querySelector('#releaseBadge');
-  if(mobile&&badge&&left&&badge.parentElement!==left){left.appendChild(badge)}
-  if(!mobile&&badge&&actions&&badge.parentElement!==actions){actions.insertBefore(badge,who||actions.firstChild)}
-  const tools=document.querySelector('#mobileToolsBtn'),bell=document.querySelector('#reminderBell'),logout=document.querySelector('#logout');
-  if(mobile&&actions){[tools,bell,logout].forEach(el=>{if(el&&el.parentElement===actions)actions.appendChild(el)})}
+  try{
+   const mobile=window.innerWidth<=700;
+   const bn=document.querySelector('.brand-name'),tm=document.querySelector('.top-meta'),left=document.querySelector('.top-left'),who=document.querySelector('#who'),actions=who?.parentElement;
+   if(bn){bn.dataset.fullText=bn.dataset.fullText||bn.textContent;const target=mobile?'FONKON':bn.dataset.fullText;if(bn.textContent!==target)bn.textContent=target}
+   if(tm){tm.dataset.fullText=tm.dataset.fullText||tm.textContent;const target=mobile?'Market OS · 运营增强版 R4':tm.dataset.fullText;if(tm.textContent!==target)tm.textContent=target}
+   const badge=document.querySelector('#releaseBadge');
+   if(mobile&&badge&&left&&badge.parentElement!==left)left.appendChild(badge);
+   if(!mobile&&badge&&actions&&badge.parentElement!==actions)actions.insertBefore(badge,who||actions.firstChild);
+  }catch(e){console.warn('mobile polish skipped',e)}
  }
  window.fonkonMobilePolish=polishMobileHeader;
- window.addEventListener('resize',()=>setTimeout(polishMobileHeader,50));
- const obs=new MutationObserver(()=>polishMobileHeader());
- const top=document.querySelector('.topbar');if(top)obs.observe(top,{childList:true,subtree:true});
- setTimeout(polishMobileHeader,80);setTimeout(polishMobileHeader,700);setTimeout(polishMobileHeader,1600);
+ let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(polishMobileHeader,120)});
+ [80,500,1200,2500].forEach(ms=>setTimeout(polishMobileHeader,ms));
 })();

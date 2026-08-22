@@ -1,0 +1,10 @@
+/* FONKON R10.1 global data-view navigation router */
+(function(){
+  ['req','edge','setNav','showApp'].forEach(n=>{try{const f=eval(n);if(typeof f==='function')window[n]=f}catch{}});
+  document.addEventListener('click',async function(event){
+    const el=event.target.closest('[data-view]');
+    if(!el||el.dataset.r101View||el.dataset.r101Action||el.dataset.r101Inline)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    try{if(typeof closeModal==='function')closeModal();if(typeof render!=='function')throw Error('页面路由未加载');await render(el.dataset.view)}catch(e){try{toast('页面打开失败：'+e.message)}catch{};console.error('[R10.1 nav]',e)}
+  },true);
+})();

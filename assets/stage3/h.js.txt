@@ -1,0 +1,71 @@
+/* FONKON Stage3 H: interaction reliability + system self-check */
+(function(){
+ const RELEASE='R5';
+ window.__fonkonErrors=window.__fonkonErrors||[];
+ window.__fonkonLastAction={at:0,label:''};
+ function msgOf(e){return String(e?.message||e?.reason?.message||e?.reason||e||'未知错误').slice(0,240)}
+ function report(e,ctx='操作'){
+  const m=msgOf(e);window.__fonkonErrors.push({time:new Date().toISOString(),ctx,message:m});
+  console.error('[FONKON]',ctx,e);
+  if(typeof toast==='function')toast(ctx+'失败：'+m);
+ }
+ document.addEventListener('click',e=>{const b=e.target.closest('button,.link,[data-view],[data-fk-view]');if(b)window.__fonkonLastAction={at:Date.now(),label:(b.textContent||b.getAttribute('data-view')||'操作').trim().slice(0,40)}},true);
+ window.addEventListener('error',e=>{if(Date.now()-window.__fonkonLastAction.at<5000)report(e.error||e.message,window.__fonkonLastAction.label||'按钮操作')});
+ window.addEventListener('unhandledrejection',e=>{if(Date.now()-window.__fonkonLastAction.at<5000)report(e.reason,window.__fonkonLastAction.label||'按钮操作')});
+
+ function safeWrap(name){
+  const fn=window[name]; if(typeof fn!=='function'||fn.__fonkonSafe)return;
+  const wrapped=function(){try{const r=fn.apply(this,arguments);if(r&&typeof r.then==='function')return r.catch(e=>{report(e,name);return null});return r}catch(e){report(e,name);return null}};
+  wrapped.__fonkonSafe=true;wrapped.__fonkonOriginal=fn;window[name]=wrapped;
+ }
+ const critical=['render','customerModal','opportunityModal','visitModal','taskModal','evidenceModal','openCustomer','completeTask','exportCustomers','exportOpps','managerView','settingsView','knowledgeView','knowledgeCenterView','marketIntelModal','knowledgeSubmissionModal','knowledgeReviewView','preVisitAssistantView','generatePreVisitCard','standardKnowledgeModal','knowledgeGlobalSearch','knowledgeAccess','knowledgeRoutes','reviewIntel','reviewSubmission','approveSales','rejectSales','toggleSales','makeSalesInvite','revokeInvite','handoverSales','passwordModal','forgotPassword','accountView','archiveCustomer','recycleView','restoreCustomer','purgeCustomer','adminResetPassword','importView','downloadImportTemplate','nativeBulkImport','runBulkImport','kpiView','kpiTargetModal','remindersView','dismissReminder','markAllReminderRead','mobileTools','knowledgeSamples','closeModal','showKForm','editFruitRule'];
+ critical.forEach(safeWrap);
+ if(typeof window.knowledgeView!=='function'&&typeof window.knowledgeCenterView==='function')window.knowledgeView=window.knowledgeCenterView;
+
+ function wireCore(){
+  try{
+   document.querySelectorAll('[data-view]').forEach(b=>{if(!b.__fonkonBound){b.__fonkonBound=true;b.addEventListener('click',()=>{const v=b.dataset.view;if(v&&typeof window.render==='function')window.render(v)})}});
+   const fab=document.querySelector('#fab');if(fab&&!fab.__fonkonBound){fab.__fonkonBound=true;fab.addEventListener('click',()=>window.customerModal&&window.customerModal())}
+   const tools=document.querySelector('#mobileToolsBtn');if(tools&&!tools.__fonkonBound){tools.__fonkonBound=true;tools.addEventListener('click',()=>window.mobileTools&&window.mobileTools())}
+   const bell=document.querySelector('#reminderBell');if(bell&&!bell.__fonkonBound){bell.__fonkonBound=true;bell.addEventListener('click',()=>window.render&&window.render('reminders'))}
+   const out=document.querySelector('#logout');if(out&&!out.__fonkonBound){out.__fonkonBound=true;out.addEventListener('click',()=>{try{clearSession();showApp()}catch(e){report(e,'退出') }})}
+  }catch(e){report(e,'核心按钮绑定')}
+ }
+ document.addEventListener('click',e=>{const b=e.target.closest('[data-fk-view]');if(!b)return;e.preventDefault();try{if(typeof closeModal==='function')closeModal();window.render&&window.render(b.dataset.fkView)}catch(err){report(err,'工具导航')}},false);
+
+ const baseRender=window.render;
+ if(typeof baseRender==='function'){
+  window.render=function(v){try{if(v==='selfcheck')return window.systemSelfCheckView();const r=baseRender(v);setTimeout(()=>{wireCore();auditButtons()},20);return r}catch(e){report(e,'页面 '+v);return null}};
+  window.render.__fonkonSafe=true;
+ }
+
+ function inlineName(src){const m=String(src||'').match(/^\s*(?:return\s+)?([A-Za-z_$][\w$]*)\s*\(/);return m?m[1]:null}
+ function auditButtons(){
+  let total=0,broken=[];document.querySelectorAll('button,[onclick]').forEach(el=>{total++;const src=el.getAttribute('onclick');if(!src)return;const n=inlineName(src);if(n&&typeof window[n]!=='function'){broken.push(n);el.dataset.fonkonBroken='1';el.title='功能模块未加载：'+n}}
+  );return {total,broken:[...new Set(broken)]};
+ }
+ window.fonkonButtonAudit=auditButtons;
+
+ window.mobileTools=function(){
+  const admin=profile?.role==='admin';
+  const tile=(v,ico,title,sub)=>'<button class="tool-tile" data-fk-view="'+v+'"><b>'+ico+' '+title+'</b><span>'+sub+'</span></button>';
+  modal('工作工具','<div class="tool-grid">'+tile('account','🔐','账号安全','修改密码与账号状态')+tile('import','⇧','Excel导入','客户/商机批量导入')+tile('kpi','▦','KPI目标','目标与完成率')+tile('reminders','🔔','提醒中心','跟进/红灯/旺季/审批')+(admin?tile('recycle','♲','回收站','30天恢复与永久删除')+tile('team','♙','账号审批','审批、停用、密码重置')+tile('selfcheck','✓','系统自检','检查按钮、函数和API'):'')+tile('knowledge','⌘','知识中心','水果/口岸/检测/市场情报')+'</div>');
+ };
+
+ async function apiCheck(path){try{await req(path);return {ok:true,path}}catch(e){return {ok:false,path,error:msgOf(e)}}
+ window.systemSelfCheckView=async function(){
+  if(profile?.role!=='admin')return $('#view').innerHTML=pageHead('系统自检','仅最高权限可使用')+'<div class="card empty">无权限</div>';
+  const funcs=critical.map(n=>({name:n,ok:typeof window[n]==='function'}));const audit=auditButtons();
+  $('#view').innerHTML=pageHead('系统完整性自检','检查关键按钮函数、当前页面交互和核心只读API。','<button class="btn btn-primary" id="rerunSelfCheck">重新检查</button>')+'<div id="selfCheckBody" class="card card-pad"><div class="notice">正在检查...</div></div>';
+  const checks=await Promise.all(['/rest/v1/customers?select=id&limit=1','/rest/v1/opportunities?select=id&limit=1','/rest/v1/visits?select=id&limit=1','/rest/v1/customer_tasks?select=id&limit=1','/rest/v1/fruit_catalog?select=fruit&limit=1','/rest/v1/market_intel?select=id&limit=1','/rest/v1/sales_kpi_targets?select=id&limit=1','/rest/v1/notification_state?select=user_id&limit=1','/rest/v1/profiles?select=id&limit=1'].map(apiCheck));
+  const badFns=funcs.filter(x=>!x.ok),badApi=checks.filter(x=>!x.ok);const ok=!badFns.length&&!badApi.length&&!audit.broken.length;
+  $('#selfCheckBody').innerHTML='<div class="notice '+(ok?'good':'warn')+'"><b>'+(ok?'✅ 核心自检通过':'⚠️ 发现需要处理的项目')+'</b><br>按钮扫描 '+audit.total+' 个；缺失处理函数 '+audit.broken.length+' 个；核心函数 '+(funcs.length-badFns.length)+'/'+funcs.length+'；API '+(checks.length-badApi.length)+'/'+checks.length+'。</div><div class="two section"><div class="knowledge-block"><h3>前端函数</h3>'+(badFns.length?badFns.map(x=>'<div class="knowledge-row">❌ '+esc(x.name)+'</div>').join(''):'<div class="knowledge-row">✅ 关键函数均已加载</div>')+(audit.broken.length?'<div class="knowledge-row">内联按钮缺失：'+esc(audit.broken.join('、'))+'</div>':'')+'</div><div class="knowledge-block"><h3>核心API</h3>'+checks.map(x=>'<div class="knowledge-row">'+(x.ok?'✅ ':'❌ ')+esc(x.path)+(x.error?'<div class="muted">'+esc(x.error)+'</div>':'')+'</div>').join('')+'</div></div><div class="knowledge-block"><h3>最近前端错误</h3>'+(window.__fonkonErrors.length?window.__fonkonErrors.slice(-12).reverse().map(x=>'<div class="knowledge-row"><b>'+esc(x.ctx)+'</b> · '+esc(x.message)+'<div class="muted">'+esc(x.time)+'</div></div>').join(''):'<div class="knowledge-row">暂无已捕获错误</div>')+'</div>';
+  const btn=document.querySelector('#rerunSelfCheck');if(btn)btn.onclick=()=>window.systemSelfCheckView();
+ };
+
+ function addSelfCheckNav(){if(profile?.role!=='admin')return;const side=document.querySelector('.sidebar');if(side&&!side.querySelector('[data-view="selfcheck"]')){const b=document.createElement('button');b.className='nav-btn';b.dataset.view='selfcheck';b.innerHTML='<span class="ico">✓</span><span>系统自检</span>';side.appendChild(b)}}
+ [50,300,900,1800].forEach(ms=>setTimeout(()=>{wireCore();addSelfCheckNav();auditButtons()},ms));
+ const oldShow=window.showApp;if(typeof oldShow==='function'){window.showApp=function(){const r=oldShow.apply(this,arguments);setTimeout(()=>{wireCore();addSelfCheckNav();auditButtons()},50);return r}};
+
+ try{const tm=document.querySelector('.top-meta');if(tm&&window.innerWidth<=700)tm.textContent='Market OS · 完整稳定版 R5'}catch{}
+})();

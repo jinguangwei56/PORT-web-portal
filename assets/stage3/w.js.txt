@@ -1,0 +1,67 @@
+/* FONKON Market OS - Opportunity Data Fuel Center 1.0 */
+(function(){
+  const OLD_RENDER=window.render;
+  const EVIDENCE_WEIGHT={A:100,B:85,C:65,D:35};
+  const domainName={land_port:'东货陆路口岸',sea_port:'西货/海运口岸',jiangmen_port:'江门口岸',route:'航线/运输',inspection:'查验',testing:'送检/检测',cost:'成本',service:'口岸服务'};
+  const evClass=e=>e==='A'?'b-green':e==='B'?'b-blue':e==='C'?'b-yellow':'b-gray';
+  const val=o=>o.metric_value_text||((o.metric_value??'')!==''?String(o.metric_value)+(o.metric_unit?' '+o.metric_unit:''):'文字记录');
+  const safeUrl=u=>/^https:\/\//i.test(String(u||''))?u:'';
+  const routeMatch=(c,j)=>c.cargo_group===j.cargo_group&&(!j.fruit||!c.fruit||j.fruit===c.fruit)&&(!j.country||!c.country||j.country===c.country);
+  async function loadFuel(){
+    const paths=[
+      '/rest/v1/opportunity_fuel_observations?select=*&order=observed_date.desc.nullslast,updated_at.desc&limit=200',
+      '/rest/v1/current_route_baselines?select=*&active=eq.true&order=updated_at.desc&limit=200',
+      '/rest/v1/land_port_stats?select=*&order=updated_at.desc&limit=200',
+      '/rest/v1/sea_port_stats?select=*&order=updated_at.desc&limit=200',
+      '/rest/v1/jiangmen_port_stats?select=*&order=updated_at.desc&limit=200',
+      '/rest/v1/jiangmen_routes?select=*&order=updated_at.desc&limit=200'
+    ];
+    const a=await Promise.all(paths.map(p=>req(p)));
+    return {obs:a[0]||[],cur:a[1]||[],land:a[2]||[],sea:a[3]||[],jm:a[4]||[],jr:a[5]||[]};
+  }
+  function readiness(d){
+    const costPairs=d.cur.filter(c=>c.total_cost_per_container!=null&&d.jr.some(j=>j.total_cost_per_container!=null&&routeMatch(c,j))).length;
+    const timePairs=d.cur.filter(c=>c.total_days!=null&&d.jr.some(j=>j.total_days!=null&&routeMatch(c,j))).length;
+    const regCur=[...d.land,...d.sea].filter(x=>x.inspection_rate!=null||x.testing_rate!=null||x.inspection_days!=null||x.testing_days!=null);
+    const regPairs=regCur.filter(c=>d.jm.some(j=>(!j.fruit||!c.fruit||j.fruit===c.fruit)&&(j.inspection_rate!=null||j.testing_rate!=null||j.inspection_days!=null||j.testing_days!=null))).length;
+    return {costPairs,timePairs,regPairs};
+  }
+  function observationRows(obs){
+    return obs.slice(0,60).map(o=>'<tr><td><span class="badge '+evClass(o.evidence_level)+'">'+esc(o.evidence_level)+'</span></td><td><b>'+esc(domainName[o.domain]||o.domain)+'</b><div class="muted">'+esc(o.port_name||o.route_name||'')+'</div></td><td>'+esc(o.fruit||'通用')+'<div class="muted">'+esc(o.country||'')+'</div></td><td><b>'+esc(o.metric_name)+'</b><div class="muted">'+esc(val(o))+'</div></td><td>'+esc(o.source_name||o.source_type||'-')+'<div class="muted">'+esc(o.observed_date||'-')+'</div></td><td>'+(safeUrl(o.source_url)?'<a class="link" href="'+esc(o.source_url)+'" target="_blank" rel="noopener">查看来源 ↗</a>':'<span class="muted">内部样本</span>')+'</td></tr>').join('')||'<tr><td colspan="6" class="empty">暂无燃料观察</td></tr>';
+  }
+  function routeRows(rows,type){
+    return rows.slice(0,20).map(r=>'<tr><td>'+esc(r.cargo_group||'-')+'</td><td><b>'+esc(r.fruit||'通用')+'</b><div class="muted">'+esc(r.country||'')+'</div></td><td>'+esc(type==='current'?r.current_port:r.origin_port||'待补起运港')+'</td><td>'+esc(r.total_days==null?'待补':fmt(r.total_days)+'天')+'</td><td>'+esc(r.total_cost_per_container==null?'待补':'¥'+Number(r.total_cost_per_container).toLocaleString('zh-CN',{maximumFractionDigits:2}))+'</td><td><span class="badge '+evClass(r.evidence_level)+'">'+esc(r.evidence_level||'-')+'</span></td><td>'+esc(r.data_scope||'-')+'</td></tr>').join('')||'<tr><td colspan="7" class="empty">暂无基准</td></tr>';
+  }
+  window.fuelView=async function(){
+    $('#view').innerHTML=pageHead('机会引擎 · 数据燃料中心','把官方口岸、船公司、公司实操样本分层装入引擎；未知永远不等于0。')+'<div class="card empty">正在读取燃料数据库…</div>';
+    try{
+      const d=await loadFuel(),r=readiness(d),ab=d.obs.filter(x=>['A','B'].includes(x.evidence_level)).length;
+      const fruits=[...new Set(d.obs.map(x=>x.fruit).filter(Boolean))];
+      const official=d.obs.filter(x=>['A','B'].includes(x.evidence_level)).length, internal=d.obs.filter(x=>x.evidence_level==='D').length;
+      let html=pageHead('机会引擎 · 数据燃料中心','真实数据 → 同口径基准 → ΔT / ΔC / ΔR → LSOI / PSOI。最快案例只作为案例，不冒充平均值。','<button class="btn btn-primary" onclick="knowledgeModal(\'land\')">＋录入行业数据</button><button class="btn btn-soft" onclick="render(\'knowledge\')">知识中心</button>');
+      html+='<div class="notice good"><b>Fuel 1.0规则：</b> A=官方法规/最高权威；B=政府/海关/船公司正式来源；C=交叉验证/组合基准；D=公司或单客户样本。没有同口径江门数据时，ΔT/ΔR保持未知，不把未知按0计算。</div>';
+      html+='<div class="kpis"><div class="card kpi"><div class="kpi-label">真实观察</div><div class="kpi-value">'+d.obs.length+'</div><div class="kpi-foot">官方+公司实操</div></div><div class="card kpi"><div class="kpi-label">A/B高可信</div><div class="kpi-value">'+ab+'</div><div class="kpi-foot">占 '+(d.obs.length?Math.round(ab/d.obs.length*100):0)+'%</div></div><div class="card kpi"><div class="kpi-label">水果覆盖</div><div class="kpi-value">'+fruits.length+'/13</div><div class="kpi-foot">已进入燃料观察</div></div><div class="card kpi"><div class="kpi-label">端到端现行基准</div><div class="kpi-value">'+d.cur.length+'</div><div class="kpi-foot">可用于方案对比</div></div></div>';
+      html+='<div class="three section"><div class="card card-pad"><div class="section-title"><h2>💰 ΔC成本就绪</h2><span class="badge '+(r.costPairs?'b-green':'b-gray')+'">'+r.costPairs+' 场景</span></div><div class="muted">当前方案与江门方案均有同口径成本才计算。</div></div><div class="card card-pad"><div class="section-title"><h2>⏱ ΔT时效就绪</h2><span class="badge '+(r.timePairs?'b-green':'b-gray')+'">'+r.timePairs+' 场景</span></div><div class="muted">口岸2–5小时不会直接拿去对比海外→江门全程。</div></div><div class="card card-pad"><div class="section-title"><h2>🛡 ΔR监管就绪</h2><span class="badge '+(r.regPairs?'b-green':'b-gray')+'">'+r.regPairs+' 场景</span></div><div class="muted">两边都具备查验/送检同口径样本后才产生优势值。</div></div></div>';
+      html+='<div class="two section"><div class="card card-pad"><div class="section-title"><h2>引擎数据仓状态</h2><span class="hint">不是所有观察都直接进公式</span></div>'+
+        [['东货陆路口岸',d.land.length],['海运口岸',d.sea.length],['江门口岸实测',d.jm.length],['江门路线',d.jr.length],['当前端到端路线',d.cur.length],['官方/正式来源',official],['公司样本',internal]].map(x=>'<div class="rank"><div class="rank-main"><b>'+x[0]+'</b></div><div class="rank-val">'+x[1]+'</div></div>').join('')+'</div>'+
+        '<div class="card card-pad"><div class="section-title"><h2>下一批最关键缺口</h2><span class="hint">按对LSOI/PSOI贡献排序</span></div>'+
+        '<div class="task-card"><b>① 江门水果口岸实测样本</b><div class="task-meta">按水果×月份采：正常/旺季通关、查验、送检、检测时长、等待小时。当前 '+d.jm.length+' 条。</div></div>'+
+        '<div class="task-card"><b>② 香港→江门完整驳船段</b><div class="task-meta">需要班期、实际转船等待、驳船时长、江门港操作及清关，才能形成完整ΔT。</div></div>'+
+        '<div class="task-card"><b>③ 东货陆路口岸月度样本</b><div class="task-meta">磨憨/友谊关按龙眼、榴莲、山竹等扩到淡旺季与队列数据。</div></div>'+
+        '<div class="task-card"><b>④ 西货海运口岸真实成本</b><div class="task-meta">南沙/蛇口/厦门按车厘子、葡萄、橙子、苹果、牛油果建立同口径成本。</div></div></div></div>';
+      html+='<div class="card card-pad section"><div class="section-title"><h2>真实数据来源账本</h2><span class="hint">每条数据保留来源、日期、证据等级和口径</span></div><div class="table-wrap"><table class="table"><thead><tr><th>证据</th><th>领域/口岸</th><th>水果</th><th>指标</th><th>来源/日期</th><th>原始来源</th></tr></thead><tbody>'+observationRows(d.obs)+'</tbody></table></div></div>';
+      html+='<div class="two section"><div class="card card-pad"><div class="section-title"><h2>当前方案端到端基准</h2><span class="hint">只有同口径才进入ΔT/ΔC</span></div><div class="table-wrap"><table class="table"><thead><tr><th>货类</th><th>水果/国家</th><th>当前口岸</th><th>总时效</th><th>总成本</th><th>证据</th><th>口径</th></tr></thead><tbody>'+routeRows(d.cur,'current')+'</tbody></table></div></div><div class="card card-pad"><div class="section-title"><h2>江门方案基准</h2><span class="hint">部分航线只完成海外→香港段，不强算全程</span></div><div class="table-wrap"><table class="table"><thead><tr><th>货类</th><th>水果/国家</th><th>起运港</th><th>总时效</th><th>总成本</th><th>证据</th><th>口径</th></tr></thead><tbody>'+routeRows(d.jr,'jm')+'</tbody></table></div></div></div>';
+      $('#view').innerHTML=html;
+    }catch(e){$('#view').innerHTML=pageHead('机会引擎 · 数据燃料中心','加载失败')+'<div class="notice warn"><b>'+esc(e.message)+'</b><br>登录会话会保留；请使用“重新连接”或刷新后再试。</div>';}
+  };
+  window.render=async function(v){if(v==='fuel'){try{if(typeof setNav==='function')setNav('fuel')}catch{};return window.fuelView();}return OLD_RENDER(v)};
+  function mountNav(){
+    if(document.querySelector('[data-view="fuel"]'))return;
+    const k=document.querySelector('.nav-btn[data-view="knowledge"]');if(!k)return;
+    const b=document.createElement('button');b.className='nav-btn';b.dataset.view='fuel';b.innerHTML='<span class="ico">⛽</span><span>数据燃料</span>';k.insertAdjacentElement('afterend',b);
+  }
+  const oldTools=window.mobileTools;
+  if(typeof oldTools==='function')window.mobileTools=function(){oldTools();setTimeout(()=>{const g=document.querySelector('#modalRoot .tool-grid');if(g&&!g.querySelector('[data-r102-view="fuel"]')){const b=document.createElement('button');b.type='button';b.className='tool-tile';b.dataset.r102View='fuel';b.innerHTML='<b>⛽ 数据燃料</b><span>真实口岸/航线/时效/成本</span>';g.appendChild(b)}},0)};
+  function mark(){const tm=document.querySelector('.top-meta');if(tm)tm.textContent='1.2 市场作战体系 · R10.3 / 数据燃料1.0';let b=document.querySelector('#releaseBadge');if(b)b.textContent='FUEL1';}
+  [60,300,900,1800].forEach(ms=>setTimeout(()=>{mountNav();mark()},ms));
+})();

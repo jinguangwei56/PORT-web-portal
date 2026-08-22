@@ -1,0 +1,49 @@
+/* Knowledge Center: field intel + pre-visit assistant */
+window.marketIntelView=async function(){
+ const a=await req('/rest/v1/market_intel?select=*&order=collected_at.desc&limit=300');
+ const mine=a.filter(x=>x.created_by===ses.user.id&&x.review_status==='待审核'), approved=a.filter(x=>x.review_status==='已采纳'), rejected=a.filter(x=>x.created_by===ses.user.id&&x.review_status==='已驳回');
+ const card=(x,cls)=>'<div class="knowledge-row '+cls+'"><b>'+esc(x.fruit)+'｜'+esc(x.intel_type)+'</b> '+(x.review_status==='已采纳'?'<span class="evidence-tag">共享</span>':'<span class="evidence-tag">'+esc(x.review_status)+'</span>')+'<div>'+esc(x.finding||x.pain_points||x.notes||'-')+'</div><div class="muted">'+dOnly(x.collected_at)+' · '+esc(x.market_name||x.city||'-')+' · '+esc(x.current_port||'-')+' · 证据 '+esc(x.evidence_level)+'</div>'+(x.review_note?'<div class="muted">审核：'+esc(x.review_note)+'</div>':'')+'</div>';
+ $('#knowledgeBody').innerHTML='<div class="two"><div class="knowledge-block"><h3>📝 我的待审核情报 '+mine.length+'</h3>'+(mine.length?mine.map(x=>card(x,'intel-pending')).join(''):'<div class="k-empty">没有待审核情报</div>')+(rejected.length?'<h3 style="margin-top:14px">退回修改</h3>'+rejected.map(x=>card(x,'')).join(''):'')+'</div><div class="knowledge-block"><h3>✅ 公司已验证共享情报 '+approved.length+'</h3>'+(approved.length?approved.slice(0,80).map(x=>card(x,'intel-approved')).join(''):'<div class="k-empty">暂无已采纳情报</div>')+'</div></div>';
+}
+window.marketIntelModal=async function(){
+ const fs=await req('/rest/v1/fruit_catalog?select=fruit,cargo_group&active=eq.true&order=sort_order');
+ const fo=fs.map(x=>'<option>'+esc(x.fruit)+'</option>').join('');
+ const co='<option value="">不绑定客户</option>'+customers.map(c=>'<option value="'+c.id+'">'+esc(c.company_name)+'</option>').join('');
+ modal('提交市场情报｜先待审核，后共享','<form id="intelForm" class="grid"><div class="field span4"><label>情报类型</label><select name="intel_type">'+['市场拜访','产区产季','通关查验','冷链品质','价格行情','口岸拥堵','其他'].map(x=>'<option>'+x+'</option>').join('')+'</select></div><div class="field span4"><label>水果*</label><select name="fruit" required>'+fo+'</select></div><div class="field span4"><label>关联客户</label><select name="customer_id">'+co+'</select></div>'+input('city','城市')+input('market_name','市场/办公楼')+input('country','来源国')+input('region','产区')+input('specification','规格')+input('package_info','包装')+input('wholesale_price','批发价','', 'number')+input('arrival_volume','到货量/柜量描述')+input('current_port','当前口岸')+input('current_transport','运输方式')+input('clearance_days','实际通关天数','', 'number','span4','step="0.1"')+input('queue_hours','实际排队小时','', 'number','span4','step="0.1"')+input('testing_days','送检耗时天','', 'number','span4','step="0.1"')+'<div class="field span4"><label>发生查验</label><select name="was_inspected"><option value="">未知</option><option value="true">是</option><option value="false">否</option></select></div><div class="field span4"><label>发生送检</label><select name="was_sent_for_test"><option value="">未知</option><option value="true">是</option><option value="false">否</option></select></div>'+select('evidence_level','证据等级',['A','B','C','D','未知'],'D')+input('inspection_items','现场查验项目','','text','span6')+input('testing_items','实验室项目','','text','span6')+'<div class="field span12"><label>核心发现*</label><textarea name="finding" required placeholder="例如：客户反馈11月旺季某口岸排队明显增加；请尽量写清时间、口岸、样本和数字。"></textarea></div><div class="field span6"><label>客户痛点</label><textarea name="pain_points"></textarea></div><div class="field span6"><label>客户原话</label><textarea name="customer_quote"></textarea></div>'+input('source_name','信息来源/对象','','text','span6')+'<div class="field span6"><label>补充备注</label><textarea name="notes"></textarea></div><div class="span12 notice">业务员提交后默认“待审核”。最高权限审核采纳后，才进入全公司共享市场情报；不会自动覆盖法规、产区或通关标准知识。</div><div class="span12"><button class="btn btn-primary">提交待审核</button></div></form>');
+ $('#intelForm').onsubmit=async e=>{e.preventDefault();try{const x=Object.fromEntries(new FormData(e.target));['wholesale_price','clearance_days','queue_hours','testing_days'].forEach(k=>x[k]=x[k]===''?null:+x[k]);['was_inspected','was_sent_for_test'].forEach(k=>x[k]=x[k]===''?null:x[k]==='true');if(!x.customer_id)x.customer_id=null;x.created_by=ses.user.id;x.review_status='待审核';await req('/rest/v1/market_intel',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(x)});closeModal();toast('情报已提交，等待最高权限审核');knowledgeCenterView('intel')}catch(z){toast(z.message)}};
+}
+window.knowledgeSubmissionModal=async function(){
+ const fs=await req('/rest/v1/fruit_catalog?select=fruit&active=eq.true&order=sort_order');const fo='<option value="">通用/不指定水果</option>'+fs.map(x=>'<option>'+esc(x.fruit)+'</option>').join('');
+ modal('知识补充 / 纠错','<form id="ksForm" class="grid"><div class="field span4"><label>类型</label><select name="submission_type">'+['产区产季补充','通关检测补充','冷链品质补充','知识纠错','其他'].map(x=>'<option>'+x+'</option>').join('')+'</select></div><div class="field span4"><label>水果</label><select name="fruit">'+fo+'</select></div>'+select('evidence_level','证据等级',['A','B','C','D','未知'],'D')+input('title','标题*','','text','span12','required')+'<div class="field span12"><label>补充内容*</label><textarea name="content" required></textarea></div>'+input('source_text','来源/文件/客户','','text','span6')+'<div class="field span6"><label>客户原话</label><textarea name="customer_quote"></textarea></div><div class="span12 notice">知识补充只进入审核队列。业务员不能直接修改公司标准知识。</div><div class="span12"><button class="btn btn-primary">提交审核</button></div></form>');
+ $('#ksForm').onsubmit=async e=>{e.preventDefault();try{const x=Object.fromEntries(new FormData(e.target));if(!x.fruit)x.fruit=null;x.created_by=ses.user.id;x.review_status='待审核';await req('/rest/v1/knowledge_submissions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(x)});closeModal();toast('知识补充已提交')}catch(z){toast(z.message)}};
+}
+window.preVisitAssistantView=async function(fruitPreset=''){
+ const fs=await req('/rest/v1/fruit_catalog?select=fruit,cargo_group&active=eq.true&order=sort_order');
+ const cs='<option value="">不绑定现有客户</option>'+customers.map(c=>'<option value="'+c.id+'">'+esc(c.company_name)+'</option>').join('');
+ const fo=fs.map(x=>'<option '+(x.fruit===fruitPreset?'selected':'')+'>'+esc(x.fruit)+'</option>').join('');
+ const target=$('#knowledgeBody')||$('#view');
+ target.innerHTML='<div class="assistant-card"><div class="section-title"><h2>⚡ 拜访前3分钟作战助手</h2><span class="hint">把公司知识自动转成今天要问的问题</span></div><form id="assistantForm" class="grid"><div class="field span6"><label>客户</label><select name="customer_id">'+cs+'</select></div><div class="field span6"><label>本次主谈水果</label><select name="fruit">'+fo+'</select></div><div class="span12"><button class="btn btn-primary">生成拜访作战卡</button></div></form></div><div id="assistantResult"></div>';
+ $('#assistantForm').onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));await generatePreVisitCard(x.customer_id,x.fruit)};
+ if(fruitPreset)await generatePreVisitCard('',fruitPreset);
+}
+window.generatePreVisitCard=async function(cid,fruit){
+ const c=customers.find(x=>x.id===cid)||{}; const group=(await req('/rest/v1/fruit_catalog?fruit=eq.'+encodeURIComponent(fruit)+'&select=cargo_group'))[0]?.cargo_group||'';
+ const [orig,clr,cold,intel]=await Promise.all([req('/rest/v1/fruit_origin_knowledge?fruit=eq.'+encodeURIComponent(fruit)+'&select=*&order=evidence_level.asc&limit=20'),req('/rest/v1/fruit_clearance_knowledge?fruit=eq.'+encodeURIComponent(fruit)+'&select=*&limit=30'),req('/rest/v1/fruit_coldchain_knowledge?fruit=eq.'+encodeURIComponent(fruit)+'&select=*&limit=10'),req('/rest/v1/market_intel?fruit=eq.'+encodeURIComponent(fruit)+'&review_status=eq.'+encodeURIComponent('已采纳')+'&select=*&order=collected_at.desc&limit=10')]);
+ const regions=orig.slice(0,5).map(x=>[x.country,x.region].filter(Boolean).join('·')).join('、')||'公司尚未录入已审核产区';
+ const peaks=orig.slice(0,4).map(x=>x.country+' '+(x.peak_start_month||'-')+'–'+(x.peak_end_month||'-')+'月').join('；')||'待补';
+ const items=[...new Set(clr.map(x=>x.item_name).filter(Boolean))].slice(0,8).join('、')||'待核验';
+ const tat=clr.filter(x=>x.typical_min_days!=null||x.typical_max_days!=null).slice(0,3).map(x=>x.item_name+' '+(x.typical_min_days??'-')+'–'+(x.typical_max_days??'-')+'天').join('；')||'不得写死，按实际口岸/项目核验';
+ const risks=cold.map(x=>x.common_damage_risks).filter(Boolean).slice(0,3).join('；')||'待录入';
+ const recent=intel.slice(0,3).map(x=>x.finding).filter(Boolean).join('；')||'暂无已验证近期市场情报';
+ const qs=[
+ c.decision_role?('确认：本次路线/口岸最终还是由“'+c.decision_role+'”决定吗？'):'谁是真正决定运输路线、口岸和清关服务的人？',
+ c.annual_containers?('你们这个水果全年约'+fmt(c.annual_containers)+'柜，其中旺季每月大概多少柜？'):'这个水果全年多少柜？旺季单月最高多少柜？',
+ '主要来自哪个国家、哪个产区？采摘和集中进口高峰分别是哪几个月？',
+ '目前主要走哪条路线、哪个口岸？淡季从装货到可提货实际几天？',
+ '旺季最堵时实际几天、排队多久？请给最近一次真实案例。',
+ '最近一批货有多少柜被现场查验？其中多少柜被抽样送检？具体检测了什么、等了几天？',
+ '这些延误/查验/货损实际给你造成多少元/柜或多少天的损失？',
+ '如果江门方案在旺季能给出可验证的时效/风险优势，即使成本存在差异，你愿意拿1–3柜做试柜验证吗？'
+ ];
+ $('#assistantResult').innerHTML='<div class="two section"><div class="knowledge-block"><h3>'+esc(fruit)+'｜'+esc(group)+'｜3分钟速读</h3><div class="knowledge-row"><b>主要已审核产区：</b>'+esc(regions)+'</div><div class="knowledge-row"><b>集中上市：</b>'+esc(peaks)+'</div><div class="knowledge-row"><b>已审核查验/送检知识：</b>'+esc(items)+'</div><div class="knowledge-row"><b>参考送检时效：</b>'+esc(tat)+'</div><div class="knowledge-row"><b>冷链/品质风险：</b>'+esc(risks)+'</div><div class="knowledge-row"><b>近期共享市场情报：</b>'+esc(recent)+'</div><div class="notice">凡显示“待核验/待录入”的内容，业务员不得当作确定事实向客户承诺。</div></div><div class="knowledge-block"><h3>今天必须问的8个问题</h3><div class="question-list">'+qs.map(q=>'<div>'+esc(q)+'</div>').join('')+'</div></div></div>';
+}

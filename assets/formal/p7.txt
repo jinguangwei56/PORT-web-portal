@@ -3,6 +3,28 @@ function editFruitRule(id,current){const v=prompt('输入新的Q分（0-15）',c
 function csv(rows,cols,name){const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const text='\ufeff'+cols.map(c=>q(c[1])).join(',')+'\n'+rows.map(r=>cols.map(c=>q(r[c[0]])).join(',')).join('\n');const b=new Blob([text],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();URL.revokeObjectURL(a.href)}
 function exportCustomers(){csv(customers,[['company_name','公司'],['contact_name','联系人'],['phone','电话'],['customer_type','客户类型'],['decision_role','决策角色'],['annual_containers','年柜量'],['primary_fruit','水果'],['primary_country','国家'],['current_ports','当前口岸'],['cv_score','CV'],['cv_grade','等级'],['dc_score','DC'],['market_name','市场'],['next_action','下一步'],['next_followup_at','下次跟进']],'FONKON_客户_'+new Date().toISOString().slice(0,10)+'.csv')}
 function exportOpps(){csv(opportunities,[['customer_id','客户ID'],['fruit','水果'],['cargo_group','东/西'],['origin_country','国家'],['origin_region','产区'],['current_port','当前口岸'],['stage','阶段'],['ot_score','OT'],['epi_score','EPI'],['lsoi_score','LSOI'],['psoi_score','PSOI'],['switchable_volume','可切换柜'],['trial_volume','试柜'],['final_priority','优先分'],['alert_level','灯号'],['recommendation','建议']],'FONKON_商机_'+new Date().toISOString().slice(0,10)+'.csv')}
-(async()=>{try{const x=localStorage.getItem('fonkon_session');if(x){ses=JSON.parse(x);await loadProfile();await refreshAll()}}catch(e){clearSession()}showApp()})();
+(async()=>{
+  const authish=e=>/401|403|jwt|token|expired|invalid login|refresh token|not authorized/i.test(String(e?.message||e||''));
+  const decode=token=>{try{let x=String(token||'').split('.')[1]||'';x=x.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x))}catch{return {}}};
+  const hydrate=()=>{if(!ses?.access_token)return;const p=decode(ses.access_token);if(!ses.user?.id&&p.sub)ses.user={id:p.sub,email:p.email||ses.user?.email||null};if(ses.user?.id)localStorage.setItem('fonkon_session',JSON.stringify(ses))};
+  const refreshAuth=async()=>{if(!ses?.refresh_token)throw Error('当前会话缺少refresh token');const r=await fetch(U+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({refresh_token:ses.refresh_token})});const j=await r.json();if(!r.ok)throw Error(j?.error_description||j?.message||j?.error||('HTTP '+r.status));saveSession(j);hydrate();return j};
+  let bootError=null;
+  try{
+    const raw=localStorage.getItem('fonkon_session');
+    if(raw){
+      try{ses=JSON.parse(raw)}catch(e){localStorage.removeItem('fonkon_session');throw Error('本地登录信息损坏，请重新登录')}
+      hydrate();
+      const p=decode(ses?.access_token),exp=Number(p.exp||0);
+      if(exp&&exp*1000<Date.now()+60000&&ses?.refresh_token){try{await refreshAuth()}catch(e){console.warn('[FONKON] 启动续期失败',e)}}
+      try{await loadProfile()}catch(e){
+        if(ses?.refresh_token){try{await refreshAuth();await loadProfile()}catch(e2){bootError=e2;if(authish(e2))clearSession()}}
+        else{bootError=e;if(authish(e))clearSession()}
+      }
+      if(profile){try{await refreshAll()}catch(e){bootError=e;console.warn('[FONKON] 业务数据加载降级，保留登录会话',e)}}
+    }
+  }catch(e){bootError=e;console.error('[FONKON] 启动异常',e)}
+  if(bootError&&$('#authMsg')&&!profile)$('#authMsg').textContent='会话恢复未完成：'+String(bootError?.message||bootError)+'。如页面仍显示已登录，请刷新一次；不会因普通数据错误自动清除账号。';
+  showApp();
+})();
 </script>
 </body></html>

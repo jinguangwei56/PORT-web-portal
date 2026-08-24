@@ -17,13 +17,13 @@ function injectNav(){
   mk('account','♢','账号安全');mk('import','⇧','Excel导入');mk('kpi','▦','KPI目标');mk('reminders','◉','提醒中心');if(profile?.role==='admin')mk('recycle','♲','回收站');
  }
 }
-const oldShowApp=showApp;showApp=function(){oldShowApp();if(ses&&profile){injectNav();setTimeout(()=>{if(profile.force_password_change)passwordModal(true)},80)}};
+const oldShowApp=showApp;showApp=function(){oldShowApp();if(ses&&profile)injectNav()};
 
 async function changePassword(newPassword){
  if(!ses?.access_token)throw Error('请先登录');
- const r=await fetch(U+'/auth/v1/user',{method:'PUT',headers:{apikey:K,authorization:'Bearer '+ses.access_token,'content-type':'application/json'},body:JSON.stringify({password:newPassword})});
- const j=await r.json();if(!r.ok)throw Error(j?.message||j?.error_description||'修改密码失败');
- try{await req('/rest/v1/profiles?id=eq.'+ses.user.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({force_password_change:false})});profile.force_password_change=false}catch{}
+ const j=await edge({action:'complete_password_change',new_password:newPassword});
+ if(!j?.ok)throw Error('修改密码失败，请重试');
+ profile.force_password_change=false;if(window.__fonkonAuthoritativeProfile)window.__fonkonAuthoritativeProfile.force_password_change=false;
  return j;
 }
 function passwordFields(form,selectors){
@@ -44,10 +44,10 @@ function bindPasswordVisibility(form,selectors,id){
  b.setAttribute('aria-label','显示或隐藏密码');b.setAttribute('aria-pressed','false');b.setAttribute('aria-controls',fields.map(x=>x.id).join(' '));
  b.onclick=e=>{e.preventDefault();togglePasswordFields(b,passwordFields(form,selectors))};
 }
-window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置自己的新密码后才能继续使用。':'密码至少6位，建议同时包含字母、数字和符号。')+'</div>'+input('password','新密码','','password','span12','minlength="6" autocomplete="new-password" required')+input('password2','再次输入','','password','span12','minlength="6" autocomplete="new-password" required')+'<div class="span12"><button class="btn btn-primary">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
+window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置一个与当前密码不同的新密码后才能继续使用。':'密码至少6位，且不能与当前密码相同。')+'</div>'+input('password','新密码','','password','span12','minlength="6" autocomplete="new-password" required')+input('password2','再次输入','','password','span12','minlength="6" autocomplete="new-password" required')+'<div id="pwdStatus" class="span12 muted" role="status" aria-live="polite"></div><div class="span12"><button class="btn btn-primary" id="pwdSubmit">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
  if(mandatory){const x=document.querySelector('.modal .x');if(x)x.style.display='none';const back=document.querySelector('.modal-back');if(back)back.onclick=null}
  const form=$('#pwdForm');bindPasswordVisibility(form,['#password','#password2'],'pwdVisibility');
- form.onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.password!==x.password2)return toast('两次密码不一致');if(String(x.password||'').length<6)return toast('密码至少6位');try{await changePassword(x.password);closeModal();toast('密码已修改')}catch(z){toast(z.message)}};
+ form.onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target)),status=$('#pwdStatus'),submit=$('#pwdSubmit');if(x.password!==x.password2){status.textContent='两次输入的密码不一致。';status.style.color='#b91c1c';return}if(String(x.password||'').length<6){status.textContent='密码至少6位。';status.style.color='#b91c1c';return}submit.disabled=true;submit.textContent='正在安全保存…';status.textContent='正在更新密码并确认安全状态，请稍候…';status.style.color='';try{await changePassword(x.password);status.textContent='密码已修改成功。';status.style.color='#047857';closeModal();toast('密码已修改成功，下次请使用新密码登录')}catch(z){const msg=String(z?.message||'修改密码失败');status.textContent=/different from the old|same.password|不能与当前/i.test(msg)?'新密码不能与当前或临时密码相同，请设置一个全新的密码。':msg;status.style.color='#b91c1c';submit.disabled=false;submit.textContent='确认修改'}};
 };
 
 const RECOVERY_MAIL_KEY='fonkon_recovery_mail_after',RECOVERY_TOKEN_KEY='fonkon_recovery_token';

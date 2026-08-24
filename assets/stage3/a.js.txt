@@ -26,15 +26,65 @@ async function changePassword(newPassword){
  try{await req('/rest/v1/profiles?id=eq.'+ses.user.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({force_password_change:false})});profile.force_password_change=false}catch{}
  return j;
 }
-window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置自己的新密码后才能继续使用。':'密码至少8位，建议同时包含字母、数字和符号。')+'</div>'+input('password','新密码','','password','span12','minlength="8" required')+input('password2','再次输入','','password','span12','minlength="8" required')+'<div class="span12"><button class="btn btn-primary">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
+function bindPasswordVisibility(form,selectors,id){
+ if(!form||document.querySelector('#'+id))return;
+ const actions=form.querySelector('.span12:last-child');if(!actions)return;
+ const b=document.createElement('button');b.type='button';b.id=id;b.className='btn btn-soft';b.style.marginRight='8px';b.textContent='显示密码';
+ b.onclick=()=>{const fields=selectors.map(s=>form.querySelector(s)).filter(Boolean),show=fields.some(x=>x.type==='password');fields.forEach(x=>x.type=show?'text':'password');b.textContent=show?'隐藏密码':'显示密码'};
+ actions.insertBefore(b,actions.firstChild);
+}
+window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置自己的新密码后才能继续使用。':'密码至少6位，建议同时包含字母、数字和符号。')+'</div>'+input('password','新密码','','password','span12','minlength="6" autocomplete="new-password" required')+input('password2','再次输入','','password','span12','minlength="6" autocomplete="new-password" required')+'<div class="span12"><button class="btn btn-primary">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
  if(mandatory){const x=document.querySelector('.modal .x');if(x)x.style.display='none';const back=document.querySelector('.modal-back');if(back)back.onclick=null}
- $('#pwdForm').onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.password!==x.password2)return toast('两次密码不一致');try{await changePassword(x.password);closeModal();toast('密码已修改')}catch(z){toast(z.message)}};
+ const form=$('#pwdForm');bindPasswordVisibility(form,['#password','#password2'],'pwdVisibility');
+ form.onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.password!==x.password2)return toast('两次密码不一致');if(String(x.password||'').length<6)return toast('密码至少6位');try{await changePassword(x.password);closeModal();toast('密码已修改')}catch(z){toast(z.message)}};
 };
 
-window.forgotPassword=async function(){const email=$('#loginEmail')?.value?.trim();if(!email)return toast('先填写注册邮箱');try{const r=await fetch(U+'/auth/v1/recover',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({email,redirect_to:location.origin+location.pathname})});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j?.message||'发送失败');$('#authMsg').textContent='如果邮箱已注册，密码重置邮件会发送到该邮箱。请按邮件链接设置新密码。'}catch(e){$('#authMsg').textContent='自助邮件重置暂不可用，请联系最高权限重置临时密码。'}};
-const loginForm=document.querySelector('#loginForm');if(loginForm&&!document.querySelector('#forgotPwd')){const box=document.createElement('div');box.className='field span12';box.style.textAlign='right';box.innerHTML='<button id="forgotPwd" type="button" class="btn btn-soft">忘记密码？</button>';loginForm.insertBefore(box,loginForm.lastElementChild);$('#forgotPwd').onclick=forgotPassword}
+const RECOVERY_MAIL_KEY='fonkon_recovery_mail_after',RECOVERY_TOKEN_KEY='fonkon_recovery_token';
+let forgotFlight=null,forgotTimer=null,forgotUntil=(()=>{try{return Number(sessionStorage.getItem(RECOVERY_MAIL_KEY)||0)}catch{return 0}})();
+function authMessage(text){const m=$('#authMsg');if(m)m.textContent=text}
+function setForgotCountdown(seconds){
+ clearInterval(forgotTimer);forgotUntil=Date.now()+Math.max(1,seconds)*1000;try{sessionStorage.setItem(RECOVERY_MAIL_KEY,String(forgotUntil))}catch{}
+ const tick=()=>{const b=$('#forgotPwd'),left=Math.max(0,Math.ceil((forgotUntil-Date.now())/1000));if(!b)return;if(left>0){b.disabled=true;b.textContent=left+'秒后可重发'}else{clearInterval(forgotTimer);forgotTimer=null;b.disabled=false;b.textContent='重新发送邮件';try{sessionStorage.removeItem(RECOVERY_MAIL_KEY)}catch{}}};tick();forgotTimer=setInterval(tick,1000);
+}
+function recoverErrorMessage(message,status){
+ if(status===429||/rate limit|only request this after|too many/i.test(message))return '请求过于频繁，请稍后再发送。';
+ if(/invalid format|validate email/i.test(message))return '邮箱格式不正确，请检查后重试。';
+ if(/not authorized|authorized address/i.test(message))return '当前邮件服务尚未允许发送到该邮箱，请联系最高权限配置正式邮件服务。';
+ return '邮件暂时未能发送，请稍后重试或联系最高权限。';
+}
+window.forgotPassword=function(){
+ const email=$('#loginEmail')?.value?.trim()||'';if(!email)return authMessage('请先填写注册邮箱。');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return authMessage('邮箱格式不正确，请检查后重试。');
+ if(forgotFlight)return forgotFlight;if(forgotUntil>Date.now()){setForgotCountdown(Math.ceil((forgotUntil-Date.now())/1000));return Promise.resolve(false)}
+ const b=$('#forgotPwd');if(b){b.disabled=true;b.textContent='正在发送…'}authMessage('正在发送密码重置邮件，请稍候…');
+ forgotFlight=(async()=>{try{
+  const redirectTo=location.origin+'/app-r11-1.html?mode=recovery';
+  const r=await fetch(U+'/auth/v1/recover',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({email,redirect_to:redirectTo})});
+  const text=await r.text();let j={};try{j=text?JSON.parse(text):{}}catch{}
+  const message=j?.error_description||j?.message||j?.msg||j?.error||'';
+  if(!r.ok){if(r.status===429){const m=message.match(/after\s+(\d+)\s+seconds?/i),wait=m?Number(m[1])+1:60;authMessage('请求过于频繁，请等待倒计时结束后再发送。');setForgotCountdown(wait);return false}throw Object.assign(Error(message||'发送失败'),{status:r.status})}
+  authMessage('重置邮件已发送。请检查收件箱和垃圾邮件，并点击邮件中的“重置密码”链接；链接使用后会自动返回本系统。');
+  setForgotCountdown(60);return true;
+ }catch(e){authMessage(recoverErrorMessage(String(e?.message||e||''),e?.status));return false}finally{forgotFlight=null;if(forgotUntil<=Date.now()&&b){b.disabled=false;b.textContent='忘记密码？'}}})();
+ return forgotFlight;
+};
+const loginForm=document.querySelector('#loginForm');if(loginForm&&!document.querySelector('#forgotPwd')){const box=document.createElement('div');box.className='field span12';box.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';box.innerHTML='<button id="toggleLoginPassword" type="button" class="btn btn-soft">显示密码</button><button id="forgotPwd" type="button" class="btn btn-soft">忘记密码？</button>';loginForm.insertBefore(box,loginForm.lastElementChild);$('#toggleLoginPassword').onclick=()=>{const p=$('#loginPassword'),b=$('#toggleLoginPassword');if(!p)return;const show=p.type==='password';p.type=show?'text':'password';b.textContent=show?'隐藏密码':'显示密码'};$('#forgotPwd').onclick=forgotPassword;if(forgotUntil>Date.now())setForgotCountdown(Math.ceil((forgotUntil-Date.now())/1000))}
+const registerForm=document.querySelector('#registerForm');if(registerForm&&!document.querySelector('#toggleRegisterPassword')){const box=document.createElement('div');box.className='field span12';box.innerHTML='<button id="toggleRegisterPassword" type="button" class="btn btn-soft btn-full">显示注册密码</button>';registerForm.insertBefore(box,registerForm.lastElementChild);$('#toggleRegisterPassword').onclick=()=>{const p=$('#regPassword'),b=$('#toggleRegisterPassword');if(!p)return;const show=p.type==='password';p.type=show?'text':'password';b.textContent=show?'隐藏注册密码':'显示注册密码'}}
 
-async function handleRecoveryHash(){const h=new URLSearchParams(location.hash.replace(/^#/,''));if(h.get('type')!=='recovery'||!h.get('access_token'))return;const token=h.get('access_token');history.replaceState(null,'',location.pathname+location.search);modal('设置新密码','<form id="recoverForm" class="grid">'+input('p1','新密码','','password','span12','minlength="8" required')+input('p2','再次输入','','password','span12','minlength="8" required')+'<div class="span12"><button class="btn btn-primary">保存新密码</button></div></form>');$('#recoverForm').onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.p1!==x.p2)return toast('两次密码不一致');try{const r=await fetch(U+'/auth/v1/user',{method:'PUT',headers:{apikey:K,authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({password:x.p1})});const j=await r.json();if(!r.ok)throw Error(j.message||'重置失败');closeModal();toast('密码已重置，请重新登录')}catch(z){toast(z.message)}}}
+function saveRecoveryToken(token,expiresIn){try{sessionStorage.setItem(RECOVERY_TOKEN_KEY,JSON.stringify({token,expiresAt:Date.now()+Math.max(60,Number(expiresIn||3600))*1000}))}catch{}}
+function readRecoveryToken(){try{const x=JSON.parse(sessionStorage.getItem(RECOVERY_TOKEN_KEY)||'null');if(x?.token&&Number(x.expiresAt)>Date.now())return x.token;sessionStorage.removeItem(RECOVERY_TOKEN_KEY)}catch{}return null}
+function clearRecoveryToken(){try{sessionStorage.removeItem(RECOVERY_TOKEN_KEY)}catch{}}
+function recoveryEmail(token){try{let x=String(token||'').split('.')[1]||'';x=x.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x)).email||''}catch{return ''}}
+function openRecoveryModal(token){
+ modal('设置新密码','<form id="recoverForm" class="grid"><div class="span12 notice">请输入至少6位新密码。保存成功后，请使用新密码重新登录。</div>'+input('p1','新密码','','password','span12','minlength="6" autocomplete="new-password" required')+input('p2','再次输入','','password','span12','minlength="6" autocomplete="new-password" required')+'<div class="span12"><button class="btn btn-primary">保存新密码</button></div></form>');
+ const form=$('#recoverForm');bindPasswordVisibility(form,['#p1','#p2'],'recoverVisibility');
+ form.onsubmit=async e=>{e.preventDefault();const x=Object.fromEntries(new FormData(e.target));if(x.p1!==x.p2)return toast('两次密码不一致');if(String(x.p1||'').length<6)return toast('密码至少6位');const submit=form.querySelector('button[type="submit"],button:not([type])');if(submit){submit.disabled=true;submit.textContent='正在保存…'}try{const r=await fetch(U+'/auth/v1/user',{method:'PUT',headers:{apikey:K,authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({password:x.p1})});const text=await r.text();let j={};try{j=text?JSON.parse(text):{}}catch{}if(!r.ok)throw Object.assign(Error(j?.error_description||j?.message||j?.msg||'重置失败'),{status:r.status});const email=recoveryEmail(token);clearRecoveryToken();try{clearSession()}catch{}closeModal();try{showApp()}catch{}if(email&&$('#loginEmail'))$('#loginEmail').value=email;authMessage('密码已重置成功，请使用新密码登录。');history.replaceState(null,'',location.pathname);toast('密码已重置成功')}catch(z){const expired=z?.status===401||/expired|invalid.*token|jwt/i.test(String(z?.message||''));toast(expired?'重置链接已失效，请重新发送邮件。':String(z?.message||'重置失败'));if(submit){submit.disabled=false;submit.textContent='保存新密码'}}};
+}
+async function handleRecoveryHash(){
+ const h=new URLSearchParams(location.hash.replace(/^#/,'')),mode=new URLSearchParams(location.search).get('mode');
+ const error=h.get('error_description')||h.get('error');if(error){history.replaceState(null,'',location.pathname);authMessage('重置链接无效或已过期，请重新发送密码重置邮件。');return}
+ if(h.get('type')==='recovery'&&h.get('access_token')){saveRecoveryToken(h.get('access_token'),h.get('expires_in'));try{clearSession()}catch{}history.replaceState(null,'',location.pathname+'?mode=recovery')}
+ const token=readRecoveryToken();if(token){try{showApp()}catch{}openRecoveryModal(token)}else if(mode==='recovery')authMessage('重置链接无效或已过期，请返回登录页重新发送邮件。');
+}
 setTimeout(handleRecoveryHash,300);
 
 window.accountView=function(){let html=pageHead('账号安全','密码、账号状态与数据安全。','<button class="btn btn-primary" onclick="passwordModal(false)">修改密码</button>');html+='<div class="two"><div class="card card-pad"><div class="section-title"><h2>我的账号</h2></div><div class="security-box"><b>'+esc(profile?.name||'')+'</b><div class="muted">'+esc(profile?.email||ses?.user?.email||'')+'</div><div style="margin-top:10px">角色：'+(profile?.role==='admin'?'最高权限':'业务员')+' · 状态：'+(profile?.active?'启用':'停用')+'</div></div></div><div class="card card-pad"><div class="section-title"><h2>安全规则</h2></div><div class="help">• 业务员只读取自己的客户数据<br>• 密码重置后必须首次登录改密<br>• 核心数据不允许业务员永久删除<br>• 最高权限操作会留审计记录</div></div></div>';$('#view').innerHTML=html};

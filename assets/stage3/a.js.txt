@@ -58,7 +58,7 @@ window.forgotPassword=function(){
  const b=$('#forgotPwd');if(b){b.disabled=true;b.textContent='正在发送…'}authMessage('正在发送密码重置邮件，请稍候…');
  forgotFlight=(async()=>{try{
   const redirectTo=location.origin+'/app-r11-1.html?mode=recovery';
-  const r=await fetch(U+'/auth/v1/recover',{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({email,redirect_to:redirectTo})});
+  const r=await fetch(U+'/auth/v1/recover?redirect_to='+encodeURIComponent(redirectTo),{method:'POST',headers:{apikey:K,'content-type':'application/json'},body:JSON.stringify({email})});
   const text=await r.text();let j={};try{j=text?JSON.parse(text):{}}catch{}
   const message=j?.error_description||j?.message||j?.msg||j?.error||'';
   if(!r.ok){if(r.status===429){const m=message.match(/after\s+(\d+)\s+seconds?/i),wait=m?Number(m[1])+1:60;authMessage('请求过于频繁，请等待倒计时结束后再发送。');setForgotCountdown(wait);return false}throw Object.assign(Error(message||'发送失败'),{status:r.status})}

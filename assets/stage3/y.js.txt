@@ -10,7 +10,7 @@
   const PREV_SHOW=window.showApp;
   const E=v=>esc(String(v??''));
   const D=v=>v?new Date(v).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
-  const linkFor=t=>location.origin+'/report.html?t='+encodeURIComponent(t);
+  const linkFor=t=>'https://os.fonkonsupply.com/report.html?t='+encodeURIComponent(t);
   async function reportApi(body){
     if(!ses?.access_token)throw Error('请先登录');
     const r=await fetch(API,{method:'POST',headers:{apikey:K,authorization:'Bearer '+ses.access_token,'content-type':'application/json'},body:JSON.stringify(body)});

@@ -1,5 +1,8 @@
 /* FONKON Market OS - Secure Route Report Center 1.0 */
 (function(){
+  const reportStyle=document.createElement('style');
+  reportStyle.textContent='.report-route-list{display:grid;gap:9px;max-height:290px;overflow:auto;padding:3px}.report-route-option{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line,#dbe4ea);border-radius:13px;padding:11px 12px;background:#fff;cursor:pointer}.report-route-option:hover{border-color:#11a49d;background:#f1fbfa}.report-route-option input{margin-top:4px;accent-color:#078d87}.report-route-option span{display:grid;gap:4px}.report-route-option small{color:var(--muted,#718096);line-height:1.45}.report-check{display:flex!important;align-items:center;gap:8px}.report-check input{width:auto!important;accent-color:#078d87}@media(max-width:720px){.report-route-list{max-height:250px}.report-route-option{padding:12px 10px}.report-check{grid-column:1/-1!important}}';
+  document.head.appendChild(reportStyle);
   const API=U+'/functions/v1/route-report';
   const PREV_RENDER=window.render;
   const PREV_ROUTE_VIEW=window.routeModelView;

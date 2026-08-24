@@ -26,12 +26,23 @@ async function changePassword(newPassword){
  try{await req('/rest/v1/profiles?id=eq.'+ses.user.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({force_password_change:false})});profile.force_password_change=false}catch{}
  return j;
 }
+function passwordFields(form,selectors){
+ return selectors.map(s=>form.querySelector(s)||(s[0]==='#'?form.elements.namedItem(s.slice(1)):null)).filter(x=>x&&x.tagName==='INPUT');
+}
+function togglePasswordFields(button,fields,showLabel='隐藏密码',hideLabel='显示密码'){
+ fields=fields.filter(Boolean);if(!button||!fields.length)return false;
+ const show=fields.some(x=>x.type==='password');
+ fields.forEach((x,i)=>{x.type=show?'text':'password';if(!x.id)x.id=button.id+'Field'+(i+1)});
+ button.textContent=show?showLabel:hideLabel;button.setAttribute('aria-pressed',show?'true':'false');button.setAttribute('aria-controls',fields.map(x=>x.id).join(' '));
+ return true;
+}
 function bindPasswordVisibility(form,selectors,id){
- if(!form||document.querySelector('#'+id))return;
- const actions=form.querySelector('.span12:last-child');if(!actions)return;
- const b=document.createElement('button');b.type='button';b.id=id;b.className='btn btn-soft';b.style.marginRight='8px';b.textContent='显示密码';
- b.onclick=()=>{const fields=selectors.map(s=>form.querySelector(s)).filter(Boolean),show=fields.some(x=>x.type==='password');fields.forEach(x=>x.type=show?'text':'password');b.textContent=show?'隐藏密码':'显示密码'};
- actions.insertBefore(b,actions.firstChild);
+ if(!form)return;
+ let b=document.querySelector('#'+id);
+ if(!b){const actions=form.querySelector('.span12:last-child');if(!actions)return;b=document.createElement('button');b.type='button';b.id=id;b.className='btn btn-soft';b.style.marginRight='8px';b.textContent='显示密码';actions.insertBefore(b,actions.firstChild)}
+ const fields=passwordFields(form,selectors);fields.forEach((x,i)=>{if(!x.id)x.id=id+'Field'+(i+1)});
+ b.setAttribute('aria-label','显示或隐藏密码');b.setAttribute('aria-pressed','false');b.setAttribute('aria-controls',fields.map(x=>x.id).join(' '));
+ b.onclick=e=>{e.preventDefault();togglePasswordFields(b,passwordFields(form,selectors))};
 }
 window.passwordModal=function(mandatory=false){modal(mandatory?'必须修改临时密码':'修改登录密码','<form id="pwdForm" class="grid"><div class="span12 '+(mandatory?'danger-note':'notice')+'">'+(mandatory?'最高权限刚刚重置了你的密码。为保护客户数据，必须设置自己的新密码后才能继续使用。':'密码至少6位，建议同时包含字母、数字和符号。')+'</div>'+input('password','新密码','','password','span12','minlength="6" autocomplete="new-password" required')+input('password2','再次输入','','password','span12','minlength="6" autocomplete="new-password" required')+'<div class="span12"><button class="btn btn-primary">确认修改</button>'+(mandatory?'':'<button type="button" class="btn btn-soft" onclick="closeModal()">取消</button>')+'</div></form>');
  if(mandatory){const x=document.querySelector('.modal .x');if(x)x.style.display='none';const back=document.querySelector('.modal-back');if(back)back.onclick=null}
@@ -67,8 +78,8 @@ window.forgotPassword=function(){
  }catch(e){authMessage(recoverErrorMessage(String(e?.message||e||''),e?.status));return false}finally{forgotFlight=null;if(forgotUntil<=Date.now()&&b){b.disabled=false;b.textContent='忘记密码？'}}})();
  return forgotFlight;
 };
-const loginForm=document.querySelector('#loginForm');if(loginForm&&!document.querySelector('#forgotPwd')){const box=document.createElement('div');box.className='field span12';box.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';box.innerHTML='<button id="toggleLoginPassword" type="button" class="btn btn-soft">显示密码</button><button id="forgotPwd" type="button" class="btn btn-soft">忘记密码？</button>';loginForm.insertBefore(box,loginForm.lastElementChild);$('#toggleLoginPassword').onclick=()=>{const p=$('#loginPassword'),b=$('#toggleLoginPassword');if(!p)return;const show=p.type==='password';p.type=show?'text':'password';b.textContent=show?'隐藏密码':'显示密码'};$('#forgotPwd').onclick=forgotPassword;if(forgotUntil>Date.now())setForgotCountdown(Math.ceil((forgotUntil-Date.now())/1000))}
-const registerForm=document.querySelector('#registerForm');if(registerForm&&!document.querySelector('#toggleRegisterPassword')){const box=document.createElement('div');box.className='field span12';box.innerHTML='<button id="toggleRegisterPassword" type="button" class="btn btn-soft btn-full">显示注册密码</button>';registerForm.insertBefore(box,registerForm.lastElementChild);$('#toggleRegisterPassword').onclick=()=>{const p=$('#regPassword'),b=$('#toggleRegisterPassword');if(!p)return;const show=p.type==='password';p.type=show?'text':'password';b.textContent=show?'隐藏注册密码':'显示注册密码'}}
+const loginForm=document.querySelector('#loginForm');if(loginForm&&!document.querySelector('#forgotPwd')){const box=document.createElement('div');box.className='field span12';box.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px';box.innerHTML='<button id="toggleLoginPassword" type="button" class="btn btn-soft">显示密码</button><button id="forgotPwd" type="button" class="btn btn-soft">忘记密码？</button>';loginForm.insertBefore(box,loginForm.lastElementChild);$('#toggleLoginPassword').onclick=e=>{e.preventDefault();togglePasswordFields($('#toggleLoginPassword'),[$('#loginPassword')])};$('#forgotPwd').onclick=forgotPassword;if(forgotUntil>Date.now())setForgotCountdown(Math.ceil((forgotUntil-Date.now())/1000))}
+const registerForm=document.querySelector('#registerForm');if(registerForm&&!document.querySelector('#toggleRegisterPassword')){const box=document.createElement('div');box.className='field span12';box.innerHTML='<button id="toggleRegisterPassword" type="button" class="btn btn-soft btn-full">显示注册密码</button>';registerForm.insertBefore(box,registerForm.lastElementChild);$('#toggleRegisterPassword').onclick=e=>{e.preventDefault();togglePasswordFields($('#toggleRegisterPassword'),[$('#regPassword')],'隐藏注册密码','显示注册密码')}}
 
 function saveRecoveryToken(token,expiresIn){try{sessionStorage.setItem(RECOVERY_TOKEN_KEY,JSON.stringify({token,expiresAt:Date.now()+Math.max(60,Number(expiresIn||3600))*1000}))}catch{}}
 function readRecoveryToken(){try{const x=JSON.parse(sessionStorage.getItem(RECOVERY_TOKEN_KEY)||'null');if(x?.token&&Number(x.expiresAt)>Date.now())return x.token;sessionStorage.removeItem(RECOVERY_TOKEN_KEY)}catch{}return null}

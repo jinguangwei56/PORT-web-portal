@@ -8,7 +8,10 @@ const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, apikey, content-type',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-max-age': '86400',
+  'vary': 'Origin',
   'content-type': 'application/json; charset=utf-8',
+  'x-content-type-options': 'nosniff',
   'cache-control': 'no-store, private, max-age=0'
 };
 const ADMIN_HEADERS = {apikey:S, authorization:'Bearer '+S, 'content-type':'application/json'};
@@ -52,13 +55,17 @@ async function requestJson(path:string,init:RequestInit={}){
   if(!r.ok)throw statusError(body?.message||body?.msg||body?.error_description||body?.error||('HTTP '+r.status),r.status);
   return body;
 }
+function jwtPayload(authorization:string){try{let x=authorization.slice(7).split('.')[1]||'';x=x.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x))}catch{return {}}}
 async function currentMember(req:Request){
   const authorization=req.headers.get('authorization')||'';
   if(!authorization.startsWith('Bearer '))throw statusError('请先登录',401);
-  const r=await fetch(U+'/auth/v1/user',{headers:{apikey:S,authorization}});
+  const claimedId=uuid(jwtPayload(authorization)?.sub);if(!claimedId)throw statusError('登录状态已失效',401);
+  const [r,rows]=await Promise.all([
+    fetch(U+'/auth/v1/user',{headers:{apikey:S,authorization}}),
+    requestJson('/rest/v1/profiles?id=eq.'+q(claimedId)+'&select=id,name,email,role,active,approval_status')
+  ]);
   if(!r.ok)throw statusError('登录状态已失效',401);
-  const user=await r.json();
-  const rows=await requestJson('/rest/v1/profiles?id=eq.'+q(user.id)+'&select=id,name,email,role,active,approval_status');
+  const user=await r.json();if(user?.id!==claimedId)throw statusError('登录身份校验失败',401);
   const profile=rows?.[0];
   if(!profile||!profile.active||profile.approval_status!=='approved')throw statusError('账号尚未获准使用',403);
   return {user,profile};
@@ -85,7 +92,8 @@ async function assertStored(path:string,userId:string,sessionId:string){
 async function signedPhoto(path:string){
   const r=await requestJson('/storage/v1/object/sign/'+BUCKET+'/'+encodePath(path),{method:'POST',body:JSON.stringify({expiresIn:600})});
   const signed=r?.signedURL||r?.signedUrl;if(!signed)throw new Error('照片临时访问地址生成失败');
-  return new URL(signed,U).toString();
+  const href=String(signed).startsWith('/object/')?'/storage/v1'+String(signed):String(signed);
+  return new URL(href,U).toString();
 }
 
 function redactPII(v:any){
@@ -382,7 +390,7 @@ async function discardUpload(b:Row,member:any){
 
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:CORS});
-  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.0.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
+  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.1.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   try{
     const member=await currentMember(req),b=await req.json(),action=text(b.action,80);

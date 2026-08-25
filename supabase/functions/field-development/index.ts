@@ -3,7 +3,7 @@ const S = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || Deno.env.get('DEEPSEEK_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
 const BUCKET = 'field-evidence';
-const PROMPT_VERSION = 'FIELD_AI_V7';
+const PROMPT_VERSION = 'FIELD_AI_V8';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, apikey, content-type',
@@ -101,7 +101,7 @@ function redactFinancials(v:any){
     .replace(/(价格|成本|报价|TCO|费用|运费|单价|金额|利润|毛利)\s*[:：为是约大概]*\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:万|万元|元|块|美元|美金|港币))?/gi,'$1：[金额已脱敏]');
 }
 function financialKey(k:string){if(/^customer_quote$/i.test(k))return false;return /(^|_)(?:tco|cost|price|pricing|quoted_price|quotation|amount|fee|fees|unit_price|revenue|profit|margin|freight_rate)(_|$)/i.test(k)}
-function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/office_visits/g,'办公室拜访次数').replace(/office_photo_link_rate/g,'办公室照片关联率').replace(/overview_photo_coverage/g,'市场整体照片覆盖率').replace(/priority_leads/g,'重点客户数').replace(/followup_actions/g,'跟进动作数').replace(/档口/g,'大棚销售区').replace(/有效现场记录/g,'现场记录').replace(/地围栏/g,'地理围栏').replace(/缺少市场整体照片和办公室(?:区)?照片/g,'缺少市场整体照片').replace(/整体照片覆盖率和办公室照片链接率缺失[^。；]*/g,'市场整体照片覆盖仍待补充').replace(/缺少办公室(?:区)?照片(?:链接)?/g,'办公室门口照片按需补充').replace(/补充市场整体照片和必要的办公室(?:区)?照片/g,'按需补充市场整体照片；办公室门口照片仅在实际拜访时按需补充')}
+function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/office_visits/g,'办公室拜访次数').replace(/office_photo_link_rate/g,'办公室照片关联率').replace(/overview_photo_coverage/g,'市场整体照片覆盖率').replace(/entry_photo_coverage/g,'入口照片覆盖率').replace(/gps_verified_sessions/g,'高精度GPS场次数').replace(/geofence_configured_sessions/g,'已配置市场入口基准场次数').replace(/priority_leads/g,'重点客户数').replace(/followup_actions/g,'跟进动作数').replace(/档口/g,'大棚销售区').replace(/有效现场记录/g,'现场记录').replace(/地围栏/g,'地理围栏').replace(/办公室照片关联率为null/g,'办公室照片关联率不适用').replace(/市场整体照片覆盖率为null/g,'市场整体照片覆盖尚待形成').replace(/\bnull\b/gi,'待形成').replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi,'系统指标').replace(/缺少市场整体照片和办公室(?:区)?照片/g,'缺少市场整体照片').replace(/整体照片覆盖率和办公室照片链接率缺失[^。；]*/g,'市场整体照片覆盖仍待补充').replace(/缺少办公室(?:区)?照片(?:链接)?/g,'办公室门口照片按需补充').replace(/补充市场整体照片和必要的办公室(?:区)?照片/g,'按需补充市场整体照片；办公室门口照片仅在实际拜访时按需补充')}
 function sanitizeAI(v:any,depth=0):any{
   if(depth>6)return null;
   if(Array.isArray(v))return v.slice(0,30).map(x=>sanitizeAI(x,depth+1));

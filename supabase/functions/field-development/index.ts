@@ -2,6 +2,8 @@ const U = Deno.env.get('SUPABASE_URL')!;
 const S = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || Deno.env.get('DEEPSEEK_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
+const AMAP_JS_KEY = Deno.env.get('AMAP_JS_KEY') || '';
+const AMAP_WEB_SERVICE_KEY = Deno.env.get('AMAP_WEB_SERVICE_KEY') || '';
 const BUCKET = 'field-evidence';
 const PROMPT_VERSION = 'FIELD_AI_V8';
 const CORS = {
@@ -94,6 +96,36 @@ async function signedPhoto(path:string){
   const signed=r?.signedURL||r?.signedUrl;if(!signed)throw new Error('照片临时访问地址生成失败');
   const href=String(signed).startsWith('/object/')?'/storage/v1'+String(signed):String(signed);
   return new URL(href,U).toString();
+}
+
+async function amapJson(endpoint:string,params:Record<string,string>){
+  if(!AMAP_WEB_SERVICE_KEY)throw statusError('地图地址服务尚未配置',503);
+  const url=new URL(endpoint);for(const [key,value] of Object.entries(params))url.searchParams.set(key,value);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+  try{
+    const response=await fetch(url,{signal:controller.signal,headers:{accept:'application/json'}}),raw=await response.text();let body:any={};
+    try{body=raw?JSON.parse(raw):{}}catch{}
+    if(!response.ok||String(body?.status)!=='1')throw statusError('地图地址服务暂时不可用',502);
+    return body;
+  }catch(error){
+    if((error as Error)?.name==='AbortError')throw statusError('地图地址识别超时，请稍后重试',504);
+    throw error;
+  }finally{clearTimeout(timer)}
+}
+function amapPart(v:any,max=160){return text(Array.isArray(v)?v[0]:v,max)}
+async function reverseGeocode(b:Row){
+  const latitude=numberOrNull(b.latitude,-90,90),longitude=numberOrNull(b.longitude,-180,180);
+  if(latitude===null||longitude===null)throw new Error('未取得有效定位');
+  const source=longitude.toFixed(6)+','+latitude.toFixed(6),converted=await amapJson('https://restapi.amap.com/v3/assistant/coordinate/convert',{key:AMAP_WEB_SERVICE_KEY,locations:source,coordsys:'gps',output:'JSON'}),pair=String(converted?.locations||'').split(',').map(Number);
+  if(pair.length!==2||!pair.every(Number.isFinite))throw statusError('地图坐标转换失败',502);
+  const mapLongitude=pair[0],mapLatitude=pair[1],mapLocation=mapLongitude.toFixed(6)+','+mapLatitude.toFixed(6),result=await amapJson('https://restapi.amap.com/v3/geocode/regeo',{key:AMAP_WEB_SERVICE_KEY,location:mapLocation,radius:'300',extensions:'all',roadlevel:'0',output:'JSON'}),regeo=result?.regeocode||{},component=regeo?.addressComponent||{},pois=Array.isArray(regeo?.pois)?regeo.pois:[];
+  const nearest=pois.map((poi:any)=>({name:amapPart(poi?.name,120),address:amapPart(poi?.address,180),distance:numberOrNull(poi?.distance,0,100000),type:amapPart(poi?.type,120)})).filter((poi:any)=>poi.name).sort((a:any,b:any)=>(a.distance??Infinity)-(b.distance??Infinity))[0]||null;
+  const province=amapPart(component?.province,80),city=amapPart(component?.city,80),district=amapPart(component?.district,80),township=amapPart(component?.township,80),formatted=amapPart(regeo?.formatted_address,300)||[province,city,district,township].filter(Boolean).join('');
+  return {ok:true,formatted_address:formatted||'当前位置',province,city,district,township,nearby_poi:nearest,map_position:{longitude:mapLongitude,latitude:mapLatitude}};
+}
+function amapConfig(){
+  if(!AMAP_JS_KEY)throw statusError('地图组件尚未配置',503);
+  return {ok:true,key:AMAP_JS_KEY,service_host:U+'/functions/v1/amap-proxy/_AMapService'};
 }
 
 function redactPII(v:any){
@@ -390,10 +422,12 @@ async function discardUpload(b:Row,member:any){
 
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:CORS});
-  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.1.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
+  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.2.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   try{
     const member=await currentMember(req),b=await req.json(),action=text(b.action,80);
+    if(action==='amap_config')return json(amapConfig());
+    if(action==='reverse_geocode')return json(await reverseGeocode(b));
     if(action==='bootstrap')return json(await bootstrap(member));
     if(action==='start_session')return json(await startSession(b,member));
     if(action==='add_evidence')return json(await addEvidence(b,member));

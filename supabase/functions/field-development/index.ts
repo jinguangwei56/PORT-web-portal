@@ -101,7 +101,7 @@ function redactFinancials(v:any){
     .replace(/(价格|成本|报价|TCO|费用|运费|单价|金额|利润|毛利)\s*[:：为是约大概]*\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:万|万元|元|块|美元|美金|港币))?/gi,'$1：[金额已脱敏]');
 }
 function financialKey(k:string){if(/^customer_quote$/i.test(k))return false;return /(^|_)(?:tco|cost|price|pricing|quoted_price|quotation|amount|fee|fees|unit_price|revenue|profit|margin|freight_rate)(_|$)/i.test(k)}
-function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据')}
+function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/档口/g,'大棚销售区')}
 function sanitizeAI(v:any,depth=0):any{
   if(depth>6)return null;
   if(Array.isArray(v))return v.slice(0,30).map(x=>sanitizeAI(x,depth+1));
@@ -115,6 +115,7 @@ function analysisItems(v:any,max=12):any[]{
   const items=Array.isArray(v)?v:(v===null||v===undefined||v===''?[]:[v]);
   return items.map(x=>sanitizeAI(x)).filter(x=>typeof x==='string'?!!x.trim():!!x&&typeof x==='object').slice(0,max);
 }
+function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,20}(?:至少|不少于|不低于)\s*\d+|(?:至少|不少于|不低于)\s*\d+\s*(?:个|次|条|家|场|天|人|区域|市场日))/u.test(s)}
 function sanitizeScene(v:any){
   const enumValue=(x:any,allowed:string[])=>allowed.includes(text(x,30))?text(x,30):null;
   const priceValue=v?.price_sign_visible===true||v?.price_sign_visible==='true'?true:v?.price_sign_visible===false||v?.price_sign_visible==='false'?false:null;
@@ -206,8 +207,8 @@ function fallbackCoach(metrics:Row){
   return {headline:'固定指标复盘已完成',confirmed_strengths:strengths,risks,next_actions:next,next_visit_questions:questions,market_signals:[],data_gaps:risks.filter(x=>x.includes('缺')||x.includes('没有')),disclaimer:'这是固定规则复盘，不是AI推断；未知数据未按0计算。'};
 }
 function normalizeCoachOutput(v:any,metrics:Row){
-  const fallback=fallbackCoach(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])};
-  return {headline:safeAIText(v?.headline)||fallback.headline,confirmed_strengths:pick('confirmed_strengths'),risks:pick('risks'),next_actions:pick('next_actions'),next_visit_questions:pick('next_visit_questions'),market_signals:pick('market_signals'),data_gaps:pick('data_gaps'),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
+  const fallback=fallbackCoach(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])},advice=(key:string)=>{const ai=analysisItems(v?.[key]).filter(x=>!unsupportedQuota(x));return ai.length?ai:analysisItems(fallback[key])};
+  return {headline:safeAIText(v?.headline)||fallback.headline,confirmed_strengths:pick('confirmed_strengths'),risks:pick('risks'),next_actions:advice('next_actions'),next_visit_questions:advice('next_visit_questions'),market_signals:pick('market_signals'),data_gaps:pick('data_gaps'),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
 }
 async function coachSession(session:Row,touchpoints:Row[],evidence:Row[],member:any){
   const metrics=sessionMetrics(session,touchpoints,evidence),safeTouchpoints=touchpoints.map((x,i)=>({record_id:'T'+(i+1),level:x.record_level,zone:x.market_zone,fruits:arr(x.fruits),origins:arr(x.origin_countries),volume_range:redactFinancials(text(x.volume_range,80))||null,current_ports:arr(x.current_ports),pain_points:arr(x.pain_points),customer_quote:redactFinancials(x.customer_quote),decision_role:text(x.decision_role,80)||null,interest_level:x.interest_level,outcome:redactFinancials(x.outcome)||null,next_action:redactFinancials(x.next_action)||null,completeness:touchpointCompleteness(x)}));
@@ -350,8 +351,8 @@ function fallbackTeam(metrics:Row){
   const next:string[]=[];if(Number.isFinite(metrics.effective_rate)&&metrics.effective_rate<45)next.push('统一优化市场开场筛选，减少低价值长沟通。');if((metrics.priority_leads||0)===0)next.push('下一周期明确重点客户识别条件，并要求形成可验证下一步。');if(metrics.zones?.[0])next.push('继续验证'+metrics.zones[0].label+'的水果结构、客户角色和口岸痛点是否稳定。');return {executive_summary:'固定指标团队复盘已完成。',market_expansion_findings:metrics.markets||[],salesperson_coaching:metrics.salespeople.map((x:Row)=>({name:x.name,confirmed_data:'有效沟通'+x.meaningful_contacts+'次，重点客户'+x.priority+'个，记录完整度'+(x.data_completeness??'待形成')+(x.data_completeness===null?'':'%')+'。',suggestion:Number.isFinite(x.followup_rate)&&x.followup_rate<80?'提高明确下一步的比例。':'保持下一步闭环并验证重点客户。'})),zone_strategy:metrics.zones||[],fruit_opportunities:metrics.fruits||[],next_30_days:next,data_gaps:['当前没有足够事实的维度继续标记为待补。'],disclaimer:'这是固定规则汇总，不是AI推断；未知数据未按0计算。'};
 }
 function normalizeTeamOutput(v:any,metrics:Row){
-  const fallback=fallbackTeam(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])};
-  return {executive_summary:safeAIText(v?.executive_summary)||fallback.executive_summary,market_expansion_findings:pick('market_expansion_findings'),salesperson_coaching:pick('salesperson_coaching'),zone_strategy:pick('zone_strategy'),fruit_opportunities:pick('fruit_opportunities'),next_30_days:pick('next_30_days'),data_gaps:pick('data_gaps'),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
+  const fallback=fallbackTeam(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])},advice=(key:string)=>{const ai=analysisItems(v?.[key]).filter(x=>!unsupportedQuota(x));return ai.length?ai:analysisItems(fallback[key])};
+  return {executive_summary:safeAIText(v?.executive_summary)||fallback.executive_summary,market_expansion_findings:pick('market_expansion_findings'),salesperson_coaching:advice('salesperson_coaching'),zone_strategy:advice('zone_strategy'),fruit_opportunities:pick('fruit_opportunities'),next_30_days:advice('next_30_days'),data_gaps:pick('data_gaps'),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
 }
 async function teamDashboard(b:Row,member:any){const data=await teamData(b,member);return {ok:true,ai_configured:!!DEEPSEEK_KEY,...data}}
 async function teamAnalysis(b:Row,member:any){

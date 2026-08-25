@@ -1,6 +1,6 @@
 const U = Deno.env.get('SUPABASE_URL')!;
 const S = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || '';
+const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || Deno.env.get('DEEPSEEK_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
 const BUCKET = 'field-evidence';
 const PROMPT_VERSION = 'FIELD_AI_V2';
@@ -312,9 +312,9 @@ async function cancelSession(b:Row,member:any){
   await requestJson('/rest/v1/field_sessions?id=eq.'+q(session.id),{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status:'cancelled',ended_at:isoNow(),close_note:reason})});await logEvent(session.id,member.user.id,'session_cancelled','field_session',session.id,{reason});return {ok:true};
 }
 async function sessionDetail(b:Row,member:any){
-  const session=await sessionById(uuid(b.session_id)||'',member),[touchpoints,evidence,analyses,events]=await Promise.all([
-    requestJson('/rest/v1/field_touchpoints?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),requestJson('/rest/v1/field_evidence?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),requestJson('/rest/v1/field_ai_analyses?session_id=eq.'+q(session.id)+'&select=*&order=created_at.desc'),requestJson('/rest/v1/field_events?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc&limit=500')
-  ]);return {ok:true,session,touchpoints,evidence,analyses,events,metrics:sessionMetrics(session,touchpoints,evidence)};
+  const session=await sessionById(uuid(b.session_id)||'',member),[touchpoints,evidence,analyses,events,profiles]=await Promise.all([
+    requestJson('/rest/v1/field_touchpoints?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),requestJson('/rest/v1/field_evidence?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),requestJson('/rest/v1/field_ai_analyses?session_id=eq.'+q(session.id)+'&select=*&order=created_at.desc'),requestJson('/rest/v1/field_events?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc&limit=500'),requestJson('/rest/v1/profiles?id=eq.'+q(session.created_by)+'&select=name&limit=1')
+  ]);return {ok:true,session,touchpoints,evidence,analyses,events,salesperson_name:profiles?.[0]?.name||'未命名业务员',metrics:sessionMetrics(session,touchpoints,evidence)};
 }
 async function photoUrl(b:Row,member:any){
   const evidenceId=uuid(b.evidence_id);if(!evidenceId)throw new Error('缺少照片记录');const rows=await requestJson('/rest/v1/field_evidence?id=eq.'+q(evidenceId)+'&select=*');const ev=rows?.[0];if(!ev)throw statusError('照片记录不存在',404);await sessionById(ev.session_id,member);return {ok:true,url:await signedPhoto(ev.storage_path),expires_in:600};

@@ -3,7 +3,7 @@
    ROUTE1 business functions are preserved from the loaded modules. */
 (function(){
   'use strict';
-  const CORE={version:'R11-PERFORMANCE-SPEED1',startedAt:new Date().toISOString(),booted:false,booting:false,rendering:false,queuedView:null,currentView:'dashboard',requests:{deduped:0,cacheHits:0,countOptimized:0,writes:0},performance:{bootReadyMs:null,lastRenderMs:null,renders:[]},errors:[]};
+  const CORE={version:'R11-VISIBLE-LOCATION-GEO1',startedAt:new Date().toISOString(),booted:false,booting:false,rendering:false,queuedView:null,currentView:'dashboard',requests:{deduped:0,cacheHits:0,countOptimized:0,writes:0},performance:{bootReadyMs:null,lastRenderMs:null,renders:[]},errors:[]};
   window.FONKON_R11=CORE;
   const E=e=>String(e?.message||e?.error_description||e?.error||e||'未知错误').slice(0,360);
   const safeAll=(sel,root=document)=>Array.from((root||document).querySelectorAll(sel));

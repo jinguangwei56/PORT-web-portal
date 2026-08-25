@@ -3,7 +3,7 @@ const S = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || Deno.env.get('DEEPSEEK_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
 const BUCKET = 'field-evidence';
-const PROMPT_VERSION = 'FIELD_AI_V4';
+const PROMPT_VERSION = 'FIELD_AI_V5';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, apikey, content-type',
@@ -101,7 +101,7 @@ function redactFinancials(v:any){
     .replace(/(价格|成本|报价|TCO|费用|运费|单价|金额|利润|毛利)\s*[:：为是约大概]*\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:万|万元|元|块|美元|美金|港币))?/gi,'$1：[金额已脱敏]');
 }
 function financialKey(k:string){if(/^customer_quote$/i.test(k))return false;return /(^|_)(?:tco|cost|price|pricing|quoted_price|quotation|amount|fee|fees|unit_price|revenue|profit|margin|freight_rate)(_|$)/i.test(k)}
-function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/档口/g,'大棚销售区')}
+function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/档口/g,'大棚销售区').replace(/缺少市场整体照片和办公室(?:区)?照片/g,'缺少市场整体照片').replace(/缺少办公室(?:区)?照片(?:链接)?/g,'办公室门口照片按需补充')}
 function sanitizeAI(v:any,depth=0):any{
   if(depth>6)return null;
   if(Array.isArray(v))return v.slice(0,30).map(x=>sanitizeAI(x,depth+1));
@@ -115,7 +115,7 @@ function analysisItems(v:any,max=12):any[]{
   const items=Array.isArray(v)?v:(v===null||v===undefined||v===''?[]:[v]);
   return items.map(x=>sanitizeAI(x)).filter(x=>typeof x==='string'?!!x.trim():!!x&&typeof x==='object').slice(0,max);
 }
-function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,20}(?:至少|不少于|不低于)\s*\d+|(?:至少|不少于|不低于)\s*\d+\s*(?:个|次|条|家|场|天|人|区域|市场日))/u.test(s)}
+function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,30}(?:至少|不少于|不低于)[^。；，,]{0,8}\d+|(?:至少|不少于|不低于)[^。；，,]{0,8}\d+\s*(?:个|次|条|家|场|天|人|区域|市场日)|每(?:次|场)[^。；，,]{0,50}入口照片[^。；，,]{0,30}(?:整体|全景)照片)/u.test(s)}
 function sanitizeScene(v:any){
   const enumValue=(x:any,allowed:string[])=>allowed.includes(text(x,30))?text(x,30):null;
   const priceValue=v?.price_sign_visible===true||v?.price_sign_visible==='true'?true:v?.price_sign_visible===false||v?.price_sign_visible==='false'?false:null;

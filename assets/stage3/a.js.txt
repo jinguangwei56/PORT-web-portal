@@ -7,7 +7,7 @@ refreshAll=async function(){
  const ps=['/rest/v1/customers?archived_at=is.null&select=*&order=updated_at.desc&limit=1000','/rest/v1/opportunities?archived_at=is.null&select=*&order=final_priority.desc&limit=1000','/rest/v1/visits?archived_at=is.null&select=*&order=visited_at.desc&limit=1000','/rest/v1/customer_tasks?archived_at=is.null&select=*&order=due_at.asc.nullslast&limit=1000','/rest/v1/data_evidence?select=*&order=observed_at.desc&limit=1000'];
  if(profile?.role==='admin')ps.push('/rest/v1/profiles?select=*&order=name.asc');
  const a=await Promise.all(ps.map(p=>req(p)));[customers,opportunities,visits,tasks,evidence]=a;profiles=a[5]||[profile];
- if(typeof window.fonkonAfterRefresh==='function')await window.fonkonAfterRefresh();
+ if(typeof window.fonkonAfterRefresh==='function')Promise.resolve().then(()=>window.fonkonAfterRefresh()).catch(e=>console.warn('[FONKON] 提醒后台同步失败',e));
 };
 
 function injectNav(){

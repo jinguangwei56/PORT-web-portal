@@ -3,12 +3,15 @@ const S = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') || Deno.env.get('DEEPSEEK_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
 const BUCKET = 'field-evidence';
-const PROMPT_VERSION = 'FIELD_AI_V2';
+const PROMPT_VERSION = 'FIELD_AI_V8';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, apikey, content-type',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-max-age': '86400',
+  'vary': 'Origin',
   'content-type': 'application/json; charset=utf-8',
+  'x-content-type-options': 'nosniff',
   'cache-control': 'no-store, private, max-age=0'
 };
 const ADMIN_HEADERS = {apikey:S, authorization:'Bearer '+S, 'content-type':'application/json'};
@@ -52,13 +55,17 @@ async function requestJson(path:string,init:RequestInit={}){
   if(!r.ok)throw statusError(body?.message||body?.msg||body?.error_description||body?.error||('HTTP '+r.status),r.status);
   return body;
 }
+function jwtPayload(authorization:string){try{let x=authorization.slice(7).split('.')[1]||'';x=x.replace(/-/g,'+').replace(/_/g,'/');while(x.length%4)x+='=';return JSON.parse(atob(x))}catch{return {}}}
 async function currentMember(req:Request){
   const authorization=req.headers.get('authorization')||'';
   if(!authorization.startsWith('Bearer '))throw statusError('请先登录',401);
-  const r=await fetch(U+'/auth/v1/user',{headers:{apikey:S,authorization}});
+  const claimedId=uuid(jwtPayload(authorization)?.sub);if(!claimedId)throw statusError('登录状态已失效',401);
+  const [r,rows]=await Promise.all([
+    fetch(U+'/auth/v1/user',{headers:{apikey:S,authorization}}),
+    requestJson('/rest/v1/profiles?id=eq.'+q(claimedId)+'&select=id,name,email,role,active,approval_status')
+  ]);
   if(!r.ok)throw statusError('登录状态已失效',401);
-  const user=await r.json();
-  const rows=await requestJson('/rest/v1/profiles?id=eq.'+q(user.id)+'&select=id,name,email,role,active,approval_status');
+  const user=await r.json();if(user?.id!==claimedId)throw statusError('登录身份校验失败',401);
   const profile=rows?.[0];
   if(!profile||!profile.active||profile.approval_status!=='approved')throw statusError('账号尚未获准使用',403);
   return {user,profile};
@@ -85,7 +92,8 @@ async function assertStored(path:string,userId:string,sessionId:string){
 async function signedPhoto(path:string){
   const r=await requestJson('/storage/v1/object/sign/'+BUCKET+'/'+encodePath(path),{method:'POST',body:JSON.stringify({expiresIn:600})});
   const signed=r?.signedURL||r?.signedUrl;if(!signed)throw new Error('照片临时访问地址生成失败');
-  return new URL(signed,U).toString();
+  const href=String(signed).startsWith('/object/')?'/storage/v1'+String(signed):String(signed);
+  return new URL(href,U).toString();
 }
 
 function redactPII(v:any){
@@ -101,15 +109,22 @@ function redactFinancials(v:any){
     .replace(/(价格|成本|报价|TCO|费用|运费|单价|金额|利润|毛利)\s*[:：为是约大概]*\s*\d[\d,]*(?:\.\d+)?(?:\s*(?:万|万元|元|块|美元|美金|港币))?/gi,'$1：[金额已脱敏]');
 }
 function financialKey(k:string){if(/^customer_quote$/i.test(k))return false;return /(^|_)(?:tco|cost|price|pricing|quoted_price|quotation|amount|fee|fees|unit_price|revenue|profit|margin|freight_rate)(_|$)/i.test(k)}
+function safeAIText(v:any,max=1200){return text(redactFinancials(v),max).replace(/成本|价格|报价|TCO|金额|费用|运费|单价|利润|毛利|采购价|销售价|货值/gi,'敏感商务数据').replace(/(?:敏感商务数据[、，,或和与及\s]*){2,}/g,'敏感商务数据').replace(/office_visits/g,'办公室拜访次数').replace(/office_photo_link_rate/g,'办公室照片关联率').replace(/overview_photo_coverage/g,'市场整体照片覆盖率').replace(/entry_photo_coverage/g,'入口照片覆盖率').replace(/gps_verified_sessions/g,'高精度GPS场次数').replace(/geofence_configured_sessions/g,'已配置市场入口基准场次数').replace(/priority_leads/g,'重点客户数').replace(/followup_actions/g,'跟进动作数').replace(/档口/g,'大棚销售区').replace(/有效现场记录/g,'现场记录').replace(/地围栏/g,'地理围栏').replace(/办公室照片关联率为null/g,'办公室照片关联率不适用').replace(/市场整体照片覆盖率为null/g,'市场整体照片覆盖尚待形成').replace(/\bnull\b/gi,'待形成').replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi,'系统指标').replace(/缺少市场整体照片和办公室(?:区)?照片/g,'缺少市场整体照片').replace(/整体照片覆盖率和办公室照片链接率缺失[^。；]*/g,'市场整体照片覆盖仍待补充').replace(/缺少办公室(?:区)?照片(?:链接)?/g,'办公室门口照片按需补充').replace(/补充市场整体照片和必要的办公室(?:区)?照片/g,'按需补充市场整体照片；办公室门口照片仅在实际拜访时按需补充')}
 function sanitizeAI(v:any,depth=0):any{
   if(depth>6)return null;
   if(Array.isArray(v))return v.slice(0,30).map(x=>sanitizeAI(x,depth+1));
   if(v&&typeof v==='object'){const o:Row={};for(const [k,x] of Object.entries(v).slice(0,80)){const key=text(k,80);if(!financialKey(key))o[key]=sanitizeAI(x,depth+1)}return o}
-  if(typeof v==='string')return text(redactFinancials(v),1200);
+  if(typeof v==='string')return safeAIText(v);
   if(typeof v==='number')return Number.isFinite(v)?v:null;
   if(typeof v==='boolean'||v===null)return v;
   return null;
 }
+function analysisItems(v:any,max=12):any[]{
+  const items=Array.isArray(v)?v:(v===null||v===undefined||v===''?[]:[v]);
+  return items.map(x=>sanitizeAI(x)).filter(x=>typeof x==='string'?!!x.trim():!!x&&typeof x==='object').slice(0,max);
+}
+function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,30}(?:至少|不少于|不低于)[^。；，,]{0,8}\d+|(?:至少|不少于|不低于)[^。；，,]{0,8}\d+\s*(?:个|次|条|家|场|天|人|区域|市场日)|每(?:次|场)[^。；，,]{0,50}入口照片[^。；，,]{0,30}(?:整体|全景)(?:照片|概览|现场))/u.test(s)}
+function hiddenPrivacyGap(v:any){return /(?:具体)?客户(?:姓名|名称|身份)|联系人(?:姓名|名称)?|联系方式|手机号|邮箱/.test(typeof v==='string'?v:JSON.stringify(v??''))}
 function sanitizeScene(v:any){
   const enumValue=(x:any,allowed:string[])=>allowed.includes(text(x,30))?text(x,30):null;
   const priceValue=v?.price_sign_visible===true||v?.price_sign_visible==='true'?true:v?.price_sign_visible===false||v?.price_sign_visible==='false'?false:null;
@@ -161,7 +176,7 @@ function sceneTags(evidence:Row[]){
     if(o.customer_flow)tags.push(labels[o.customer_flow]||o.customer_flow);
     if(o.cold_container_activity)tags.push(labels[o.cold_container_activity]||o.cold_container_activity);
     if(o.congestion)tags.push(o.congestion==='high'?'明显拥堵':labels[o.congestion]||o.congestion);
-    if(o.price_sign_visible===true)tags.push('可见价格牌/促销牌');
+    if(o.price_sign_visible===true)tags.push('可见促销标识');
     for(const f of arr(o.displayed_fruits,12))tags.push('陈列：'+f);
     for(const b of arr(o.competitor_brands,12))tags.push('竞品：'+b);
     return tags;
@@ -200,11 +215,15 @@ function fallbackCoach(metrics:Row){
   questions.push('确认谁负责进口或物流决策，以及是否愿意提供一票真实路线数据。');
   return {headline:'固定指标复盘已完成',confirmed_strengths:strengths,risks,next_actions:next,next_visit_questions:questions,market_signals:[],data_gaps:risks.filter(x=>x.includes('缺')||x.includes('没有')),disclaimer:'这是固定规则复盘，不是AI推断；未知数据未按0计算。'};
 }
+function normalizeCoachOutput(v:any,metrics:Row){
+  const fallback=fallbackCoach(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])},advice=(key:string)=>{const ai=analysisItems(v?.[key]).filter(x=>!unsupportedQuota(x));return ai.length?ai:analysisItems(fallback[key])};
+  return {headline:safeAIText(v?.headline)||fallback.headline,confirmed_strengths:pick('confirmed_strengths'),risks:pick('risks'),next_actions:advice('next_actions'),next_visit_questions:advice('next_visit_questions'),market_signals:pick('market_signals'),data_gaps:pick('data_gaps'),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
+}
 async function coachSession(session:Row,touchpoints:Row[],evidence:Row[],member:any){
   const metrics=sessionMetrics(session,touchpoints,evidence),safeTouchpoints=touchpoints.map((x,i)=>({record_id:'T'+(i+1),level:x.record_level,zone:x.market_zone,fruits:arr(x.fruits),origins:arr(x.origin_countries),volume_range:redactFinancials(text(x.volume_range,80))||null,current_ports:arr(x.current_ports),pain_points:arr(x.pain_points),customer_quote:redactFinancials(x.customer_quote),decision_role:text(x.decision_role,80)||null,interest_level:x.interest_level,outcome:redactFinancials(x.outcome)||null,next_action:redactFinancials(x.next_action)||null,completeness:touchpointCompleteness(x)}));
-  const system='你是FONKON进口水果市场开发教练。根据固定指标、匿名现场事实和业务员人工确认的照片现场标签给出可执行复盘；这些标签不是AI识图结论。严禁编造；未知不按0；不要输出成本、价格、报价、TCO或金额；不要用单纯打卡量评价业务员。输出json对象，字段固定为 headline,confirmed_strengths,risks,next_actions,next_visit_questions,market_signals,data_gaps,disclaimer。每个结论必须能对应输入指标或现场事实，建议要适合水果批发市场A/B/C/D大棚和办公室两种场景。';
+  const system='你是FONKON进口水果市场开发教练。根据固定指标、匿名现场事实和业务员人工确认的照片现场标签给出可执行复盘；这些标签不是AI识图结论。严禁编造，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要用单纯打卡量评价业务员。样本较少或现场记录仍进行中时，只能说明样本有限并提出验证动作，不得评价为停滞、懒惰或表现差，也不得凭空设定硬性拜访次数或沟通数量。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场只需入口照片，按需补一张市场整体现场照片。办公室区只有实际发生办公室拜访时，才可在不影响沟通时按客户补门口照片；office_visits为0且office_photo_links为0表示不适用，绝不能列为缺口。输出JSON对象：headline和disclaimer必须是字符串；confirmed_strengths、risks、next_actions、next_visit_questions、market_signals、data_gaps必须是字符串数组。每个结论必须能对应输入指标或现场事实。';
   let provider='deterministic',model:string|null=null,status='fallback',output=fallbackCoach(metrics),usage:Row={},error:string|null=null;
-  try{const ai=await deepseekJSON(system,{market:session.market_name,work_mode:session.work_mode,metrics,touchpoints:safeTouchpoints},2200);provider='deepseek';model=ai.model;status='completed';output=ai.output;usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
+  try{const ai=await deepseekJSON(system,{market:session.market_name,work_mode:session.work_mode,metrics,touchpoints:safeTouchpoints},2200);provider='deepseek';model=ai.model;status='completed';output=normalizeCoachOutput(ai.output,metrics);usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
   const row={session_id:session.id,requested_by:member.user.id,subject_user_id:session.created_by,analysis_scope:'session_coach',status,model_provider:provider,model_name:model,prompt_version:PROMPT_VERSION,deterministic_metrics:metrics,ai_output:output,usage,error_message:error};
   await requestJson('/rest/v1/field_ai_analyses?on_conflict=session_id,analysis_scope',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(row)});
   await requestJson('/rest/v1/field_sessions?id=eq.'+q(session.id),{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({deterministic_metrics:metrics,ai_status:status,ai_summary:output})});
@@ -329,7 +348,7 @@ function aggregateTeam(sessions:Row[],touchpoints:Row[],profiles:Row[],evidence:
   for(const e of evidence){const x=ensure(e.created_by);if(e.evidence_type==='entry_photo')x.entry_photos++;if(e.evidence_type==='overview_photo')x.overview_photos++;if(e.evidence_type==='office_door_photo')x.office_photos++;if(e.location_status==='verified')x.verified_photos++}
   const salespeople=Object.values(byUser).map((x:any)=>({user_id:x.user_id,name:x.name,sessions:x.sessions,market_days:x.market_days.size,duration_minutes:Math.round(x.duration_minutes),contacts:x.contacts,quick:x.quick,effective:x.effective,priority:x.priority,office:x.office,meaningful_contacts:x.effective+x.priority+x.office,effective_rate:x.contacts?Math.round((x.effective+x.priority+x.office)/x.contacts*100):null,followup_rate:(x.effective+x.priority+x.office)?Math.round(x.followups/(x.effective+x.priority+x.office)*100):null,crm_synced:x.crm_synced,data_completeness:x.contacts?Math.round(x.completeness_sum/x.contacts):null,contacts_per_hour:x.duration_minutes&&x.contacts?Number((x.contacts/(x.duration_minutes/60)).toFixed(1)):null,entry_photos:x.entry_photos,overview_photos:x.overview_photos,office_photos:x.office_photos,verified_photos:x.verified_photos,effective_work_points:x.quick+x.effective*3+x.priority*5+x.office*4})).sort((a:any,b:any)=>b.priority-a.priority||b.meaningful_contacts-a.meaningful_contacts||(b.data_completeness??-1)-(a.data_completeness??-1));
   const completed=sessions.filter(x=>x.status==='completed'),marketCompleted=completed.filter(x=>x.work_mode==='market_shed'),marketCompletedIds=new Set(marketCompleted.map(x=>x.id)),total=touchpoints.length,meaningful=touchpoints.filter(x=>['effective','priority','office_visit'].includes(x.record_level)).length,officeTouchpoints=touchpoints.filter(x=>x.record_level==='office_visit'),linkedOffice=new Set(evidence.filter(x=>x.evidence_type==='office_door_photo'&&x.touchpoint_id).map(x=>x.touchpoint_id)).size,entrySessions=new Set(evidence.filter(x=>x.evidence_type==='entry_photo').map(x=>x.session_id)).size,overviewSessions=new Set(evidence.filter(x=>x.evidence_type==='overview_photo'&&marketCompletedIds.has(x.session_id)).map(x=>x.session_id)).size,configured=sessions.filter(x=>['inside','outside'].includes(x.start_geofence_status));
-  return {sessions:sessions.length,completed_sessions:completed.length,market_days:new Set(sessions.map(x=>chinaDate(x.started_at))).size,salespeople_active:salespeople.filter((x:any)=>x.sessions||x.contacts).length,contacts_total:total,meaningful_contacts:meaningful,effective_rate:total?Math.round(meaningful/total*100):null,priority_leads:touchpoints.filter(x=>x.record_level==='priority').length,followup_actions:touchpoints.filter(x=>x.next_action||x.next_followup_at).length,crm_synced:touchpoints.filter(x=>x.customer_id||x.synced_visit_id).length,entry_photo_coverage:sessions.length?Math.round(entrySessions/sessions.length*100):null,overview_photo_coverage:marketCompleted.length?Math.round(overviewSessions/marketCompleted.length*100):null,office_photo_link_rate:officeTouchpoints.length?Math.round(linkedOffice/officeTouchpoints.length*100):null,gps_verified_sessions:sessions.filter(x=>x.start_location_status==='verified').length,gps_exception_sessions:sessions.filter(x=>x.start_location_status==='unavailable').length,geofence_configured_sessions:configured.length,geofence_outside_sessions:configured.filter(x=>x.start_geofence_status==='outside').length,salespeople,markets:topCounts(sessions,x=>[x.market_name]),zones:topCounts(touchpoints,x=>[text(x.market_zone)].filter(Boolean),12),scene_signals:sceneTags(evidence),fruits:topCounts(touchpoints,x=>arr(x.fruits),12),pain_points:topCounts(touchpoints,x=>arr(x.pain_points),12),current_ports:topCounts(touchpoints,x=>arr(x.current_ports),12)};
+  return {sessions:sessions.length,completed_sessions:completed.length,market_days:new Set(sessions.map(x=>chinaDate(x.started_at))).size,salespeople_active:salespeople.filter((x:any)=>x.sessions||x.contacts).length,contacts_total:total,meaningful_contacts:meaningful,office_visits:officeTouchpoints.length,effective_rate:total?Math.round(meaningful/total*100):null,priority_leads:touchpoints.filter(x=>x.record_level==='priority').length,followup_actions:touchpoints.filter(x=>x.next_action||x.next_followup_at).length,crm_synced:touchpoints.filter(x=>x.customer_id||x.synced_visit_id).length,entry_photo_coverage:sessions.length?Math.round(entrySessions/sessions.length*100):null,overview_photo_coverage:marketCompleted.length?Math.round(overviewSessions/marketCompleted.length*100):null,office_photo_link_rate:officeTouchpoints.length?Math.round(linkedOffice/officeTouchpoints.length*100):null,gps_verified_sessions:sessions.filter(x=>x.start_location_status==='verified').length,gps_exception_sessions:sessions.filter(x=>x.start_location_status==='unavailable').length,geofence_configured_sessions:configured.length,geofence_outside_sessions:configured.filter(x=>x.start_geofence_status==='outside').length,salespeople,markets:topCounts(sessions,x=>[x.market_name]),zones:topCounts(touchpoints,x=>[text(x.market_zone)].filter(Boolean),12),scene_signals:sceneTags(evidence),fruits:topCounts(touchpoints,x=>arr(x.fruits),12),pain_points:topCounts(touchpoints,x=>arr(x.pain_points),12),current_ports:topCounts(touchpoints,x=>arr(x.current_ports),12)};
 }
 async function teamData(b:Row,member:any){
   if(!isAdmin(member))throw statusError('只有最高权限可查看团队现场数据',403);const days=clamp(intOrNull(b.days,1,365)||30,1,365),today=chinaDate(),todayStart=new Date(today+'T00:00:00+08:00'),start=new Date(todayStart.getTime()-(days-1)*86400000),since=start.toISOString();
@@ -340,12 +359,16 @@ async function teamData(b:Row,member:any){
 function fallbackTeam(metrics:Row){
   const next:string[]=[];if(Number.isFinite(metrics.effective_rate)&&metrics.effective_rate<45)next.push('统一优化市场开场筛选，减少低价值长沟通。');if((metrics.priority_leads||0)===0)next.push('下一周期明确重点客户识别条件，并要求形成可验证下一步。');if(metrics.zones?.[0])next.push('继续验证'+metrics.zones[0].label+'的水果结构、客户角色和口岸痛点是否稳定。');return {executive_summary:'固定指标团队复盘已完成。',market_expansion_findings:metrics.markets||[],salesperson_coaching:metrics.salespeople.map((x:Row)=>({name:x.name,confirmed_data:'有效沟通'+x.meaningful_contacts+'次，重点客户'+x.priority+'个，记录完整度'+(x.data_completeness??'待形成')+(x.data_completeness===null?'':'%')+'。',suggestion:Number.isFinite(x.followup_rate)&&x.followup_rate<80?'提高明确下一步的比例。':'保持下一步闭环并验证重点客户。'})),zone_strategy:metrics.zones||[],fruit_opportunities:metrics.fruits||[],next_30_days:next,data_gaps:['当前没有足够事实的维度继续标记为待补。'],disclaimer:'这是固定规则汇总，不是AI推断；未知数据未按0计算。'};
 }
+function normalizeTeamOutput(v:any,metrics:Row){
+  const fallback=fallbackTeam(metrics),pick=(key:string)=>{const ai=analysisItems(v?.[key]);return ai.length?ai:analysisItems(fallback[key])},advice=(key:string)=>{const ai=analysisItems(v?.[key]).filter(x=>!unsupportedQuota(x));return ai.length?ai:analysisItems(fallback[key])},gaps=()=>{const ai=analysisItems(v?.data_gaps).filter(x=>!hiddenPrivacyGap(x));return ai.length?ai:analysisItems(fallback.data_gaps)};
+  return {executive_summary:safeAIText(v?.executive_summary)||fallback.executive_summary,market_expansion_findings:pick('market_expansion_findings'),salesperson_coaching:advice('salesperson_coaching'),zone_strategy:advice('zone_strategy'),fruit_opportunities:pick('fruit_opportunities'),next_30_days:advice('next_30_days'),data_gaps:gaps(),disclaimer:safeAIText(v?.disclaimer)||fallback.disclaimer};
+}
 async function teamDashboard(b:Row,member:any){const data=await teamData(b,member);return {ok:true,ai_configured:!!DEEPSEEK_KEY,...data}}
 async function teamAnalysis(b:Row,member:any){
-  const data=await teamData(b,member),metrics=data.metrics,aliases:Row={},safePeople=metrics.salespeople.map((x:Row,i:number)=>{const alias='业务员S'+(i+1);aliases[alias]=x.name;return {name:alias,sessions:x.sessions,market_days:x.market_days,contacts:x.contacts,meaningful_contacts:x.meaningful_contacts,priority:x.priority,effective_rate:x.effective_rate,followup_rate:x.followup_rate,data_completeness:x.data_completeness,contacts_per_hour:x.contacts_per_hour}}),safe={period_start:data.period_start,period_end:data.period_end,metrics:{...metrics,salespeople:safePeople}};
+  const data=await teamData(b,member),metrics=data.metrics,aliases:Row={},safePeople=metrics.salespeople.map((x:Row,i:number)=>{const alias='业务员S'+(i+1);aliases[alias]=x.name;return {name:alias,sessions:x.sessions,market_days:x.market_days,contacts:x.contacts,meaningful_contacts:x.meaningful_contacts,office_visits:x.office,priority:x.priority,effective_rate:x.effective_rate,followup_rate:x.followup_rate,data_completeness:x.data_completeness,contacts_per_hour:x.contacts_per_hour}}),safe={period_start:data.period_start,period_end:data.period_end,metrics:{...metrics,salespeople:safePeople}};
   const restoreAliases=(v:any):any=>Array.isArray(v)?v.map(restoreAliases):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,restoreAliases(x)])):typeof v==='string'?Object.entries(aliases).reduce((s,[a,n])=>s.split(a).join(String(n)),v):v;
-  const system='你是FONKON进口水果市场拓展分析顾问。只能依据匿名汇总指标和业务员人工确认的照片现场标签提出公司市场开发优化方案；这些标签不是AI识图结论。不能编造客户、港口或销量事实；未知不按0；不要输出成本、价格、报价、TCO或金额；不要只按打卡数量评价业务员。输出json对象，字段固定为 executive_summary,market_expansion_findings,salesperson_coaching,zone_strategy,fruit_opportunities,next_30_days,data_gaps,disclaimer。建议必须适合水果批发市场大棚区与办公室区两种开发方式。';
-  let provider='deterministic',model:string|null=null,status='fallback',output=fallbackTeam(metrics),usage:Row={},error:string|null=null;try{const ai=await deepseekJSON(system,safe,2600);provider='deepseek';model=ai.model;status='completed';output=restoreAliases(ai.output);usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
+  const system='你是FONKON进口水果市场拓展分析顾问。只能依据匿名汇总指标和业务员人工确认的照片现场标签提出公司市场开发优化方案；这些标签不是AI识图结论。不能编造客户、港口、销量或业务状态，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要只按打卡数量评价业务员。样本较少或存在进行中的现场记录时，只能说明样本有限并提出下一步验证动作，不得评价为停滞、懒惰或表现差，不得把进行中的现场记录称为已完成拜访，也不得凭空设定硬性拜访次数或沟通数量。客户姓名、联系方式等身份字段已按隐私规则主动移除，绝不能把它们列为数据缺口。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场只需入口照片，按需补一张市场整体现场照片。办公室区只有实际发生办公室拜访时，才可在不影响沟通时按客户补门口照片；office_visits为0且office_photo_link_rate为null表示不适用，绝不能列为缺口。输出JSON对象：executive_summary和disclaimer必须是字符串；market_expansion_findings、zone_strategy、fruit_opportunities、next_30_days、data_gaps必须是字符串数组；salesperson_coaching必须是对象数组，每项固定为{name,confirmed_data,suggestion}。';
+  let provider='deterministic',model:string|null=null,status='fallback',output=fallbackTeam(metrics),usage:Row={},error:string|null=null;try{const ai=await deepseekJSON(system,safe,2600);provider='deepseek';model=ai.model;status='completed';output=normalizeTeamOutput(restoreAliases(ai.output),metrics);usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
   await requestJson('/rest/v1/field_ai_analyses',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({session_id:null,requested_by:member.user.id,subject_user_id:null,analysis_scope:'company_period',period_start:data.period_start,period_end:data.period_end,status,model_provider:provider,model_name:model,prompt_version:PROMPT_VERSION,deterministic_metrics:metrics,ai_output:output,usage,error_message:error})});await logEvent(null,member.user.id,'company_analysis_generated','field_ai_analysis',null,{period_start:data.period_start,period_end:data.period_end,provider,model,status});return {ok:true,...data,analysis:output,ai_status:status,provider,model,error};
 }
 async function addMarket(b:Row,member:any){
@@ -367,7 +390,7 @@ async function discardUpload(b:Row,member:any){
 
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:CORS});
-  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.0.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
+  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.1.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   try{
     const member=await currentMember(req),b=await req.json(),action=text(b.action,80);

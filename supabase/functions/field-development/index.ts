@@ -5,7 +5,7 @@ const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
 const AMAP_JS_KEY = Deno.env.get('AMAP_JS_KEY') || '';
 const AMAP_WEB_SERVICE_KEY = Deno.env.get('AMAP_WEB_SERVICE_KEY') || '';
 const BUCKET = 'field-evidence';
-const PROMPT_VERSION = 'FIELD_AI_V8';
+const PROMPT_VERSION = 'FIELD_AI_V9';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, apikey, content-type',
@@ -155,7 +155,7 @@ function analysisItems(v:any,max=12):any[]{
   const items=Array.isArray(v)?v:(v===null||v===undefined||v===''?[]:[v]);
   return items.map(x=>sanitizeAI(x)).filter(x=>typeof x==='string'?!!x.trim():!!x&&typeof x==='object').slice(0,max);
 }
-function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,30}(?:至少|不少于|不低于)[^。；，,]{0,8}\d+|(?:至少|不少于|不低于)[^。；，,]{0,8}\d+\s*(?:个|次|条|家|场|天|人|区域|市场日)|每(?:次|场)[^。；，,]{0,50}入口照片[^。；，,]{0,30}(?:整体|全景)(?:照片|概览|现场))/u.test(s)}
+function unsupportedQuota(v:any){const s=typeof v==='string'?v:JSON.stringify(v??'');return /(?:每(?:日|周|月|场|次)[^。；，,]{0,30}(?:至少|不少于|不低于)[^。；，,]{0,8}\d+|(?:至少|不少于|不低于)[^。；，,]{0,8}\d+\s*(?:个|次|条|家|场|天|人|区域|市场日))/u.test(s)}
 function hiddenPrivacyGap(v:any){return /(?:具体)?客户(?:姓名|名称|身份)|联系人(?:姓名|名称)?|联系方式|手机号|邮箱/.test(typeof v==='string'?v:JSON.stringify(v??''))}
 function sanitizeScene(v:any){
   const enumValue=(x:any,allowed:string[])=>allowed.includes(text(x,30))?text(x,30):null;
@@ -232,18 +232,19 @@ function sessionMetrics(session:Row,touchpoints:Row[],evidence:Row[]){
   const planned=arr(session.planned_zones),visited=arr(session.zones_visited),duration=Math.max(0,Math.round(((session.ended_at?new Date(session.ended_at).getTime():Date.now())-new Date(session.started_at).getTime())/60000));
   const completeness=total?Math.round(touchpoints.reduce((s,x)=>s+touchpointCompleteness(x),0)/total):null;
   const effectiveRate=total?Math.round(meaningful/total*100):null,followupRate=meaningful?Math.round(followups/meaningful*100):null,zoneCoverage=planned.length?Math.round(planned.filter(x=>visited.includes(x)).length/planned.length*100):(visited.length?100:null),target=intOrNull(session.target_contacts,1,200),targetCompletion=target?Math.round(total/target*100):null;
-  return {contacts_total:total,quick_contacts:quick,effective_conversations:effective,priority_leads:priority,office_visits:office,meaningful_contacts:meaningful,effective_rate:effectiveRate,followup_actions:followups,followup_rate:followupRate,crm_synced:crm,data_completeness:completeness,planned_zones:planned,visited_zones:visited,zone_coverage:zoneCoverage,target_contacts:target,target_completion:targetCompletion,duration_minutes:duration,contacts_per_hour:duration&&total?Number((total/(duration/60)).toFixed(1)):null,effective_work_points:quick+effective*3+priority*5+office*4,evidence_count:evidence.length,has_entry_photo:evidence.some(x=>x.evidence_type==='entry_photo'),has_overview_photo:evidence.some(x=>x.evidence_type==='overview_photo'),office_photo_links:evidence.filter(x=>x.evidence_type==='office_door_photo'&&x.touchpoint_id).length,verified_evidence:evidence.filter(x=>x.location_status==='verified').length,geofence_status:session.start_geofence_status||'unconfigured',start_distance_m:session.start_distance_m??null,scene_signals:sceneTags(evidence),fruits:topCounts(touchpoints,x=>arr(x.fruits)),pain_points:topCounts(touchpoints,x=>arr(x.pain_points)),current_ports:topCounts(touchpoints,x=>arr(x.current_ports)),zones:topCounts(touchpoints,x=>[text(x.market_zone)].filter(Boolean))};
+  const hasEntry=evidence.some(x=>x.evidence_type==='entry_photo'),hasOverview=evidence.some(x=>x.evidence_type==='overview_photo'),hasOffice=evidence.some(x=>x.evidence_type==='office_door_photo'),hasRequiredSecond=session.work_mode==='office_cluster'?(hasOverview||hasOffice):hasOverview;
+  return {contacts_total:total,quick_contacts:quick,effective_conversations:effective,priority_leads:priority,office_visits:office,meaningful_contacts:meaningful,effective_rate:effectiveRate,followup_actions:followups,followup_rate:followupRate,crm_synced:crm,data_completeness:completeness,planned_zones:planned,visited_zones:visited,zone_coverage:zoneCoverage,target_contacts:target,target_completion:targetCompletion,duration_minutes:duration,contacts_per_hour:duration&&total?Number((total/(duration/60)).toFixed(1)):null,effective_work_points:quick+effective*3+priority*5+office*4,evidence_count:evidence.length,required_photo_count:2,required_photos_complete:hasEntry&&hasRequiredSecond,has_entry_photo:hasEntry,has_overview_photo:hasOverview,has_office_photo:hasOffice,office_photo_links:evidence.filter(x=>x.evidence_type==='office_door_photo'&&x.touchpoint_id).length,verified_evidence:evidence.filter(x=>x.location_status==='verified').length,geofence_status:session.start_geofence_status||'unconfigured',start_distance_m:session.start_distance_m??null,scene_signals:sceneTags(evidence),fruits:topCounts(touchpoints,x=>arr(x.fruits)),pain_points:topCounts(touchpoints,x=>arr(x.pain_points)),current_ports:topCounts(touchpoints,x=>arr(x.current_ports)),zones:topCounts(touchpoints,x=>[text(x.market_zone)].filter(Boolean))};
 }
 function fallbackCoach(metrics:Row){
   const strengths:string[]=[],risks:string[]=[],next:string[]=[],questions:string[]=[];
   if(Number.isFinite(metrics.effective_rate)){if(metrics.effective_rate>=50)strengths.push('有效沟通占比较高，现场筛选较集中。');else risks.push('有效沟通占比较低，需要优化开场筛选和问题顺序。')}else risks.push('尚未形成足够客户接触，暂不计算有效沟通率。');
   if(Number.isFinite(metrics.followup_rate)){if(metrics.followup_rate>=80)strengths.push('大多数有效沟通已经形成下一步。');else risks.push('部分有效沟通没有明确下一步，客户资产容易流失。')}else risks.push('尚未形成有效沟通，跟进率保持待形成。');
   if(Number.isFinite(metrics.data_completeness)){if(metrics.data_completeness>=75)strengths.push('现场记录完整度较好，可以支持后续分层。');else risks.push('事实字段仍有缺口，二访前应先补客户角色、口岸、痛点和行动。')}else risks.push('尚无客户记录，完整度不按0计算。');
-  if(!metrics.has_overview_photo)risks.push('本次没有市场整体现场照片，市场级证据链不完整。');
+  if(!metrics.required_photos_complete)risks.push('本次没有完成入口与现场两阶段照片，市场级证据链不完整。');
   next.push('优先跟进本次重点客户，并为每一位明确时间和动作。');
   if(metrics.fruits?.[0])next.push('围绕'+metrics.fruits[0].label+'准备下一轮口岸与时效验证问题。');
   if(metrics.pain_points?.[0])questions.push('继续核实“'+metrics.pain_points[0].label+'”发生频率、影响环节和可验证案例。');
-  if(!metrics.scene_signals?.length)questions.push('补充一张整体现场照片，并用少量标签确认客流、冷柜销售和拥堵事实。');
+  if(!metrics.scene_signals?.length&&metrics.has_overview_photo)questions.push('下次可在整体现场照片中，用少量标签确认客流、冷柜销售和拥堵事实。');
   questions.push('确认谁负责进口或物流决策，以及是否愿意提供一票真实路线数据。');
   return {headline:'固定指标复盘已完成',confirmed_strengths:strengths,risks,next_actions:next,next_visit_questions:questions,market_signals:[],data_gaps:risks.filter(x=>x.includes('缺')||x.includes('没有')),disclaimer:'这是固定规则复盘，不是AI推断；未知数据未按0计算。'};
 }
@@ -253,7 +254,7 @@ function normalizeCoachOutput(v:any,metrics:Row){
 }
 async function coachSession(session:Row,touchpoints:Row[],evidence:Row[],member:any){
   const metrics=sessionMetrics(session,touchpoints,evidence),safeTouchpoints=touchpoints.map((x,i)=>({record_id:'T'+(i+1),level:x.record_level,zone:x.market_zone,fruits:arr(x.fruits),origins:arr(x.origin_countries),volume_range:redactFinancials(text(x.volume_range,80))||null,current_ports:arr(x.current_ports),pain_points:arr(x.pain_points),customer_quote:redactFinancials(x.customer_quote),decision_role:text(x.decision_role,80)||null,interest_level:x.interest_level,outcome:redactFinancials(x.outcome)||null,next_action:redactFinancials(x.next_action)||null,completeness:touchpointCompleteness(x)}));
-  const system='你是FONKON进口水果市场开发教练。根据固定指标、匿名现场事实和业务员人工确认的照片现场标签给出可执行复盘；这些标签不是AI识图结论。严禁编造，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要用单纯打卡量评价业务员。样本较少或现场记录仍进行中时，只能说明样本有限并提出验证动作，不得评价为停滞、懒惰或表现差，也不得凭空设定硬性拜访次数或沟通数量。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场只需入口照片，按需补一张市场整体现场照片。办公室区只有实际发生办公室拜访时，才可在不影响沟通时按客户补门口照片；office_visits为0且office_photo_links为0表示不适用，绝不能列为缺口。输出JSON对象：headline和disclaimer必须是字符串；confirmed_strengths、risks、next_actions、next_visit_questions、market_signals、data_gaps必须是字符串数组。每个结论必须能对应输入指标或现场事实。';
+  const system='你是FONKON进口水果市场开发教练。根据固定指标、匿名现场事实和业务员人工确认的照片现场标签给出可执行复盘；这些标签不是AI识图结论。严禁编造，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要用单纯打卡量评价业务员。样本较少或现场记录仍进行中时，只能说明样本有限并提出验证动作，不得评价为停滞、懒惰或表现差，也不得凭空设定硬性拜访次数或沟通数量。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场固定两阶段照片证据：开始时1张市场入口照片，进入大棚后1张市场整体现场照片。办公室集中拜访的第二张可为办公室区域现场或实际拜访的客户门口。超过两张仅按实际需要补充，不能要求逐客户拍照；office_visits为0且office_photo_links为0表示不适用，绝不能列为缺口。输出JSON对象：headline和disclaimer必须是字符串；confirmed_strengths、risks、next_actions、next_visit_questions、market_signals、data_gaps必须是字符串数组。每个结论必须能对应输入指标或现场事实。';
   let provider='deterministic',model:string|null=null,status='fallback',output=fallbackCoach(metrics),usage:Row={},error:string|null=null;
   try{const ai=await deepseekJSON(system,{market:session.market_name,work_mode:session.work_mode,metrics,touchpoints:safeTouchpoints},2200);provider='deepseek';model=ai.model;status='completed';output=normalizeCoachOutput(ai.output,metrics);usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
   const row={session_id:session.id,requested_by:member.user.id,subject_user_id:session.created_by,analysis_scope:'session_coach',status,model_provider:provider,model_name:model,prompt_version:PROMPT_VERSION,deterministic_metrics:metrics,ai_output:output,usage,error_message:error};
@@ -265,8 +266,9 @@ async function coachSession(session:Row,touchpoints:Row[],evidence:Row[],member:
 
 async function bootstrap(member:any){
   const mine='created_by=eq.'+q(member.user.id),sessionFilter='&'+mine;
-  const [markets,active,recent]=await Promise.all([
+  const [markets,personalMarkets,active,recent]=await Promise.all([
     requestJson('/rest/v1/field_markets?active=eq.true&select=*&order=name.asc'),
+    requestJson('/rest/v1/field_markets?active=eq.false&created_by=eq.'+q(member.user.id)+'&select=*&order=updated_at.desc&limit=30'),
     requestJson('/rest/v1/field_sessions?status=eq.active'+sessionFilter+'&select=*&order=started_at.desc&limit=1'),
     requestJson('/rest/v1/field_sessions?select=*&order=started_at.desc&limit=12'+sessionFilter)
   ]);
@@ -278,21 +280,34 @@ async function bootstrap(member:any){
     ]);
     active[0].deterministic_metrics=sessionMetrics(active[0],touchpoints,evidence);
   }
-  return {ok:true,server_time:isoNow(),can_view_team:isAdmin(member),ai_configured:!!DEEPSEEK_KEY,ai_model:DEEPSEEK_KEY?DEEPSEEK_MODEL:null,markets,active_session:active?.[0]||null,active_touchpoints:touchpoints,active_evidence:evidence,recent_sessions:recent,analysis};
+  return {ok:true,server_time:isoNow(),can_view_team:isAdmin(member),ai_configured:!!DEEPSEEK_KEY,ai_model:DEEPSEEK_KEY?DEEPSEEK_MODEL:null,markets,personal_markets:personalMarkets,active_session:active?.[0]||null,active_touchpoints:touchpoints,active_evidence:evidence,recent_sessions:recent,analysis};
+}
+async function resolveStartMarket(b:Row,member:any){
+  const marketId=uuid(b.market_id);
+  if(marketId){const rows=await requestJson('/rest/v1/field_markets?id=eq.'+q(marketId)+'&active=eq.true&select=*');if(!rows?.[0])throw new Error('所选市场或办公场地不可用');return {market:rows[0],source:'approved'};}
+  const name=text(b.custom_market_name,160),city=text(b.custom_city,80),address=text(b.custom_address,300)||null;
+  if(name.length<2)throw new Error('请填写市场或办公场地名称');if(!city)throw new Error('请填写所在城市或区域');
+  const workMode=b.work_mode==='office_cluster'?'office_cluster':'market_shed',marketType=workMode==='office_cluster'?'office_cluster':'fruit_wholesale';
+  const sameName=await requestJson('/rest/v1/field_markets?name=ilike.'+q(name)+'&select=*&limit=1');
+  if(sameName?.[0]){const existing=sameName[0];if(String(existing.city||'').trim().toLowerCase()!==city.trim().toLowerCase())throw new Error('系统已有同名场地但城市不同，请选择已有场地或补充更明确的名称');return {market:existing,source:existing.active?'approved_match':'pending_match'};}
+  const zones=workMode==='office_cluster'?['办公室区']:['A区','B区','C区','D区','办公室区'];
+  const inserted=await requestJson('/rest/v1/field_markets',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({name,city,address,market_type:marketType,zones,active:false,created_by:member.user.id})});
+  const market=inserted?.[0];if(!market)throw new Error('新场地登记失败，请稍后重试');
+  await logEvent(null,member.user.id,'field_market_submitted','field_market',market.id,{name,city,market_type:marketType,source:'salesperson_field_entry'});
+  return {market,source:'field_created'};
 }
 async function startSession(b:Row,member:any){
-  const id=uuid(b.session_id)||crypto.randomUUID(),marketId=uuid(b.market_id);if(!marketId)throw new Error('请选择市场');
-  const markets=await requestJson('/rest/v1/field_markets?id=eq.'+q(marketId)+'&active=eq.true&select=*');const market=markets?.[0];if(!market)throw new Error('所选市场不可用');
+  const id=uuid(b.session_id)||crypto.randomUUID();
   const existing=await requestJson('/rest/v1/field_sessions?created_by=eq.'+q(member.user.id)+'&status=eq.active&select=id,market_name,started_at&limit=1');if(existing.length)throw new Error('你已有一场进行中的市场开发，请先结束后再开始新的记录');
+  const entryPath=await assertStored(b.entry_photo_path,member.user.id,id),resolved=await resolveStartMarket(b,member),market=resolved.market;
   const locStatus=locationStatus(b.location_status),exception=text(b.location_exception,300)||(locStatus==='unavailable'?'手机定位暂不可用，系统已自动留痕':null);
   const lat=numberOrNull(b.latitude,-90,90),lng=numberOrNull(b.longitude,-180,180),accuracy=numberOrNull(b.accuracy_m,0,100000);
   const fence=geofenceResult(market,lat,lng,accuracy,locStatus);
-  const entryPath=await assertStored(b.entry_photo_path,member.user.id,id);
   const row={id,created_by:member.user.id,market_id:market.id,market_name:market.name,work_mode:b.work_mode==='office_cluster'?'office_cluster':'market_shed',focus_fruits:arr(b.focus_fruits,12),planned_zones:arr(b.planned_zones,12),zones_visited:[],target_contacts:intOrNull(b.target_contacts,1,200),status:'active',start_lat:lat,start_lng:lng,start_accuracy_m:accuracy,start_location_status:locStatus,start_location_exception:exception,start_distance_m:fence.distance_m,start_geofence_status:fence.status,entry_photo_path:entryPath};
   const inserted=await requestJson('/rest/v1/field_sessions',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(row)});const session=inserted[0];
   const evidence={session_id:id,created_by:member.user.id,evidence_type:'entry_photo',market_zone:null,storage_path:entryPath,captured_at:isoOrNull(b.captured_at)||isoNow(),latitude:lat,longitude:lng,accuracy_m:accuracy,location_status:locStatus,location_exception:exception,distance_from_market_m:fence.distance_m,geofence_status:fence.status,scene_observations:{},mime_type:['image/jpeg','image/png','image/webp'].includes(b.mime_type)?b.mime_type:'image/jpeg',file_size_bytes:intOrNull(b.file_size_bytes,1,8388608),note:text(b.photo_note,300)||null};
   await requestJson('/rest/v1/field_evidence',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(evidence)});
-  await logEvent(id,member.user.id,'session_started','field_session',id,{market_id:market.id,market_name:market.name,work_mode:row.work_mode,location_status:locStatus,accuracy_m:accuracy,geofence_status:fence.status,distance_m:fence.distance_m,planned_zones:row.planned_zones,target_contacts:row.target_contacts});
+  await logEvent(id,member.user.id,'session_started','field_session',id,{market_id:market.id,market_name:market.name,market_source:resolved.source,work_mode:row.work_mode,location_status:locStatus,accuracy_m:accuracy,geofence_status:fence.status,distance_m:fence.distance_m,planned_zones:row.planned_zones,target_contacts:row.target_contacts});
   return {ok:true,session};
 }
 async function addEvidence(b:Row,member:any){
@@ -353,9 +368,12 @@ async function updateTouchpoint(b:Row,member:any){
 }
 async function endSession(b:Row,member:any){
   const session=await sessionById(uuid(b.session_id)||'',member,true),ended=isoNow();
+  const evidence=await requestJson('/rest/v1/field_evidence?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),hasEntry=evidence.some((x:Row)=>x.evidence_type==='entry_photo'),hasRequiredSecond=session.work_mode==='office_cluster'?evidence.some((x:Row)=>x.evidence_type==='overview_photo'||x.evidence_type==='office_door_photo'):evidence.some((x:Row)=>x.evidence_type==='overview_photo');
+  if(!hasEntry)throw statusError('入口照片记录缺失，请联系最高权限检查本次记录',409);
+  if(!hasRequiredSecond)throw statusError(session.work_mode==='office_cluster'?'结束前请补拍1张办公室区域或客户门口照片':'结束前请补拍1张市场大棚整体现场照片',409);
   const update={status:'completed',ended_at:ended,end_lat:numberOrNull(b.latitude,-90,90),end_lng:numberOrNull(b.longitude,-180,180),end_accuracy_m:numberOrNull(b.accuracy_m,0,100000),close_note:text(b.close_note,1000)||null,ai_status:'pending'};
   await requestJson('/rest/v1/field_sessions?id=eq.'+q(session.id),{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(update)});session.status='completed';session.ended_at=ended;Object.assign(session,update);
-  const [touchpoints,evidence]=await Promise.all([requestJson('/rest/v1/field_touchpoints?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc'),requestJson('/rest/v1/field_evidence?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc')]);
+  const touchpoints=await requestJson('/rest/v1/field_touchpoints?session_id=eq.'+q(session.id)+'&select=*&order=created_at.asc');
   await logEvent(session.id,member.user.id,'session_completed','field_session',session.id,{touchpoints:touchpoints.length,evidence:evidence.length});const coach=await coachSession(session,touchpoints,evidence,member);return {ok:true,session:{...session,deterministic_metrics:coach.metrics,ai_status:coach.ai_status,ai_summary:coach.analysis},...coach};
 }
 async function cancelSession(b:Row,member:any){
@@ -399,7 +417,7 @@ async function teamDashboard(b:Row,member:any){const data=await teamData(b,membe
 async function teamAnalysis(b:Row,member:any){
   const data=await teamData(b,member),metrics=data.metrics,aliases:Row={},safePeople=metrics.salespeople.map((x:Row,i:number)=>{const alias='业务员S'+(i+1);aliases[alias]=x.name;return {name:alias,sessions:x.sessions,market_days:x.market_days,contacts:x.contacts,meaningful_contacts:x.meaningful_contacts,office_visits:x.office,priority:x.priority,effective_rate:x.effective_rate,followup_rate:x.followup_rate,data_completeness:x.data_completeness,contacts_per_hour:x.contacts_per_hour}}),safe={period_start:data.period_start,period_end:data.period_end,metrics:{...metrics,salespeople:safePeople}};
   const restoreAliases=(v:any):any=>Array.isArray(v)?v.map(restoreAliases):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,restoreAliases(x)])):typeof v==='string'?Object.entries(aliases).reduce((s,[a,n])=>s.split(a).join(String(n)),v):v;
-  const system='你是FONKON进口水果市场拓展分析顾问。只能依据匿名汇总指标和业务员人工确认的照片现场标签提出公司市场开发优化方案；这些标签不是AI识图结论。不能编造客户、港口、销量或业务状态，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要只按打卡数量评价业务员。样本较少或存在进行中的现场记录时，只能说明样本有限并提出下一步验证动作，不得评价为停滞、懒惰或表现差，不得把进行中的现场记录称为已完成拜访，也不得凭空设定硬性拜访次数或沟通数量。客户姓名、联系方式等身份字段已按隐私规则主动移除，绝不能把它们列为数据缺口。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场只需入口照片，按需补一张市场整体现场照片。办公室区只有实际发生办公室拜访时，才可在不影响沟通时按客户补门口照片；office_visits为0且office_photo_link_rate为null表示不适用，绝不能列为缺口。输出JSON对象：executive_summary和disclaimer必须是字符串；market_expansion_findings、zone_strategy、fruit_opportunities、next_30_days、data_gaps必须是字符串数组；salesperson_coaching必须是对象数组，每项固定为{name,confirmed_data,suggestion}。';
+  const system='你是FONKON进口水果市场拓展分析顾问。只能依据匿名汇总指标和业务员人工确认的照片现场标签提出公司市场开发优化方案；这些标签不是AI识图结论。不能编造客户、港口、销量或业务状态，未知不按0，严禁在任何字段出现成本、价格、报价、TCO、金额、费用、利润或相关数值，不要只按打卡数量评价业务员。样本较少或存在进行中的现场记录时，只能说明样本有限并提出下一步验证动作，不得评价为停滞、懒惰或表现差，不得把进行中的现场记录称为已完成拜访，也不得凭空设定硬性拜访次数或沟通数量。客户姓名、联系方式等身份字段已按隐私规则主动移除，绝不能把它们列为数据缺口。必须尊重真实工作方式：水果批发市场客户集中在A/B/C/D大棚的冷柜旁销售，不要求逐客户、逐档口或逐柜拍照；每场固定两阶段照片证据：开始时1张市场入口照片，进入大棚后1张市场整体现场照片。办公室集中拜访的第二张可为办公室区域现场或实际拜访的客户门口。超过两张仅按实际需要补充，不能要求逐客户拍照；office_visits为0且office_photo_link_rate为null表示不适用，绝不能列为缺口。输出JSON对象：executive_summary和disclaimer必须是字符串；market_expansion_findings、zone_strategy、fruit_opportunities、next_30_days、data_gaps必须是字符串数组；salesperson_coaching必须是对象数组，每项固定为{name,confirmed_data,suggestion}。';
   let provider='deterministic',model:string|null=null,status='fallback',output=fallbackTeam(metrics),usage:Row={},error:string|null=null;try{const ai=await deepseekJSON(system,safe,2600);provider='deepseek';model=ai.model;status='completed';output=normalizeTeamOutput(restoreAliases(ai.output),metrics);usage=ai.usage}catch(e){error=text((e as Error)?.message||e,500)}
   await requestJson('/rest/v1/field_ai_analyses',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({session_id:null,requested_by:member.user.id,subject_user_id:null,analysis_scope:'company_period',period_start:data.period_start,period_end:data.period_end,status,model_provider:provider,model_name:model,prompt_version:PROMPT_VERSION,deterministic_metrics:metrics,ai_output:output,usage,error_message:error})});await logEvent(null,member.user.id,'company_analysis_generated','field_ai_analysis',null,{period_start:data.period_start,period_end:data.period_end,provider,model,status});return {ok:true,...data,analysis:output,ai_status:status,provider,model,error};
 }
@@ -422,7 +440,7 @@ async function discardUpload(b:Row,member:any){
 
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:CORS});
-  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.2.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
+  if(req.method==='GET')return json({ok:true,service:'FONKON Field Development API',version:'2.4.0',ai_provider:'deepseek',prompt_version:PROMPT_VERSION});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   try{
     const member=await currentMember(req),b=await req.json(),action=text(b.action,80);

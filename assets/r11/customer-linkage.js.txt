@@ -1,0 +1,132 @@
+/* Reviewed customer linkage: staff JWT, live allowlisted summary, no persistence. */
+(function () {
+  'use strict';
+  if (window.__fonkonCustomerLinkageInstalled) return;
+  window.__fonkonCustomerLinkageInstalled = true;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const requestStages = { submitted: '已提交', reviewing: '审核中', needs_information: '待补资料', quoted: '已报价', converted: '已转订单', declined: '未受理', cancelled: '已取消' };
+  const orderStages = new Set(['资料审核', '已订舱', '起运港操作', '海运中', '香港中转', '抵达江门', '海关申报', '查验中', '送检中', '已放行', '拖车配送', '已完成', '异常处理中']);
+  let generation = 0, pending = null, panel = null;
+  const actor = () => ses?.user?.id && profile?.id === ses.user.id && profile.active === true && profile.approval_status === 'approved' ? ses.user.id : null;
+  const boundedText = (value, max = 160) => typeof value === 'string' ? value.slice(0, max) : '—';
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+  function clear() {
+    generation += 1;
+    pending?.abort(); pending = null;
+    panel?.remove(); panel = null;
+  }
+  function stillCurrent(seq, userId, target) {
+    return generation === seq && actor() === userId && panel === target && target.isConnected;
+  }
+  function message(target, text, state) {
+    target.replaceChildren(element('h3', '官网需求与履约进度'), element('p', text, 'muted'));
+    target.dataset.linkageState = state;
+    target.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+  }
+  function table(target, title, headers, rows) {
+    target.appendChild(element('h4', title));
+    const wrap = element('div', undefined, 'table-wrap'), view = element('table', undefined, 'table');
+    const head = element('thead'), tr = element('tr');
+    headers.forEach(label => { const th = element('th', label); th.scope = 'col'; tr.appendChild(th); });
+    head.appendChild(tr); view.appendChild(head);
+    const body = element('tbody');
+    rows.forEach(values => { const row = element('tr'); values.forEach(value => row.appendChild(element('td', value))); body.appendChild(row); });
+    view.appendChild(body); wrap.appendChild(view); target.appendChild(wrap);
+  }
+  function date(value) {
+    if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return '待更新';
+    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+  }
+  function renderSummary(target, summary, customerId) {
+    if (!summary || summary.crm_customer_id !== customerId || !Array.isArray(summary.requests) || !Array.isArray(summary.orders)) throw Error('invalid_summary');
+    const requests = summary.requests.slice(0, 100), orders = summary.orders.slice(0, 100);
+    if (!requests.length && !orders.length) {
+      message(target, '暂无可显示的已关联需求或订单。企业关系须先在 OPS 完成人工核验；未关联的账号不会显示在这里。', 'empty');
+      return;
+    }
+    message(target, '显示该客户经核验关联的业务阶段，最多各 100 条最新记录。', 'ready');
+    if (requests.length) table(target, '官网服务需求', ['需求编号', '货物', '当前阶段', '提交日期'], requests.map(row => [
+      boundedText(row.request_no, 80), boundedText(row.cargo_name), requestStages[row.request_status] || '待更新', date(row.created_at)
+    ]));
+    if (orders.length) table(target, '订单履约', ['订单编号', '货物', '当前阶段', '进度', '预计到港'], orders.map(row => [
+      boundedText(row.order_no, 80), boundedText(row.cargo_name), orderStages.has(row.status) ? row.status : '待更新',
+      typeof row.progress === 'number' && Number.isFinite(row.progress) ? Math.max(0, Math.min(100, row.progress)) + '%' : '待更新', date(row.eta)
+    ]));
+  }
+  async function load(customerId, target) {
+    pending?.abort();
+    const seq = ++generation, userId = actor(), controller = new AbortController();
+    pending = controller;
+    message(target, '正在核对客户关联并读取最新进度…', 'loading');
+    if (!userId) { message(target, '请使用有效员工账号重新登录。', 'signed_out'); return; }
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+    try {
+      if (typeof window.fonkonEnsureSession === 'function') await window.fonkonEnsureSession(false);
+      if (!stillCurrent(seq, userId, target)) return;
+      // Deliberately bypass the legacy GET response cache. The current employee
+      // token is used only for this request and no result enters browser storage.
+      const response = await fetch(U + '/rest/v1/rpc/fonkon_market_customer_summary', {
+        method: 'POST', cache: 'no-store', credentials: 'omit', signal: controller.signal,
+        headers: { apikey: K, authorization: 'Bearer ' + ses.access_token, 'content-type': 'application/json' },
+        body: JSON.stringify({ p_crm_customer_id: customerId })
+      });
+      let data = null;
+      try { data = await response.json(); } catch { /* Do not surface response bodies. */ }
+      if (!stillCurrent(seq, userId, target)) return;
+      if (!response.ok) {
+        if (response.status === 404 || data?.code === 'PGRST202' || data?.code === '42883') {
+          message(target, '业务联动服务尚未启用，现有客户档案仍可正常使用。', 'unavailable');
+        } else if (response.status === 401) {
+          message(target, '登录状态已失效，请重新登录后查询。', 'signed_out');
+        } else if (response.status === 403 || data?.code === '42501') {
+          message(target, '当前账号无权查询该客户的关联业务，或账号需要完成安全验证。', 'forbidden');
+        } else { throw Error('summary_unavailable'); }
+        return;
+      }
+      renderSummary(target, data, customerId);
+    } catch (error) {
+      if (!stillCurrent(seq, userId, target)) return;
+      if (error?.name === 'AbortError' && !timedOut) return;
+      message(target, timedOut ? '查询超时，请稍后重试。' : '暂时无法读取业务进度，请稍后重试。', 'error');
+    } finally {
+      clearTimeout(timeout);
+      if (pending === controller) pending = null;
+      if (stillCurrent(seq, userId, target) && target.dataset.linkageState !== 'signed_out') {
+        const retry = element('button', '刷新进度', 'btn btn-soft'); retry.type = 'button';
+        retry.addEventListener('click', () => { if (panel === target) void load(customerId, target); });
+        target.appendChild(retry);
+      }
+    }
+  }
+  const previousOpen = window.openCustomer;
+  window.openCustomer = async function (customerId) {
+    clear();
+    const seq = generation, userId = actor();
+    await previousOpen?.call(this, customerId);
+    if (generation !== seq || actor() !== userId || !userId || !UUID.test(customerId) || !customers.some(row => row.id === customerId)) return;
+    const body = document.querySelector('#modalRoot .modal-body');
+    if (!body) return;
+    panel = element('section', undefined, 'card card-pad section');
+    panel.id = 'fonkon-customer-business-summary';
+    panel.setAttribute('aria-live', 'polite');
+    body.appendChild(panel);
+    await load(customerId, panel);
+  };
+  const previousClose = window.closeModal;
+  window.closeModal = function () { clear(); return previousClose?.apply(this, arguments); };
+  const previousClear = window.clearSession;
+  window.clearSession = function () { clear(); return previousClear?.apply(this, arguments); };
+  const previousSave = window.saveSession;
+  window.saveSession = function (next) {
+    if (ses?.user?.id !== next?.user?.id) clear();
+    return previousSave?.apply(this, arguments);
+  };
+  window.addEventListener('storage', event => { if (event.key === 'fonkon_session' || event.key === null) clear(); });
+  window.addEventListener('pagehide', clear);
+})();

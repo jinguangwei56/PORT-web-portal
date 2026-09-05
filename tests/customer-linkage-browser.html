@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Customer linkage · synthetic browser test</title>
+<style>body{font:15px system-ui,sans-serif;margin:24px;background:#f3f6f8;color:#123}button,select{padding:10px;margin:4px}.card{padding:20px;background:white;border:1px solid #ddd;border-radius:12px;margin:16px 0}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;border-bottom:1px solid #ddd;padding:12px}.muted{color:#567}.table-wrap{overflow:auto}</style>
+<h1>客户联动浏览器测试</h1><p>仅使用合成数据与本地响应，不连接真实客户或银行服务。</p>
+<label>响应场景<select id="scenario"><option value="ready">正常摘要</option><option value="empty">未关联或无记录</option><option value="forbidden">无权限</option><option value="unavailable">服务未启用</option><option value="slow">延迟摘要</option></select></label>
+<button onclick="openCustomer(CUSTOMER)">打开合成客户 A</button><button onclick="openCustomer(OTHER)">打开合成客户 B</button><button onclick="clearSession()">测试退出</button><button onclick="restore()">恢复测试账号</button>
+<div id="modalRoot"></div><p id="requestState" role="status">尚未查询</p>
+<script>
+const CUSTOMER='10000000-0000-4000-8000-000000000001',OTHER='10000000-0000-4000-8000-000000000002';
+const U=location.origin,K='synthetic-test-key';let ses,profile;
+const customers=[{id:CUSTOMER},{id:OTHER}];
+function restore(){saveSession({user:{id:'synthetic-staff-A'},access_token:'synthetic-token'});profile={id:'synthetic-staff-A',active:true,approval_status:'approved'};}
+function saveSession(next){ses=next;}function clearSession(){ses=null;profile=null;}
+async function openCustomer(id){const root=document.getElementById('modalRoot');root.replaceChildren();const article=document.createElement('article');article.className='modal-body';const title=document.createElement('h2');title.textContent=id===CUSTOMER?'合成客户 A':'合成客户 B';article.appendChild(title);root.appendChild(article);}
+function closeModal(){document.getElementById('modalRoot').replaceChildren();}
+restore();
+const networkFetch=window.fetch;
+window.fetch=async(url,opt)=>{
+ if(!String(url).endsWith('/rest/v1/rpc/fonkon_market_customer_summary'))return networkFetch(url,opt);
+ const id=JSON.parse(opt.body).p_crm_customer_id,scenario=document.getElementById('scenario').value;
+ document.getElementById('requestState').textContent='正在查询';
+ if(scenario==='slow')await new Promise(r=>setTimeout(r,1800));
+ let status=200,data={crm_customer_id:id,requests:[],orders:[]};
+ if(scenario==='forbidden'){status=403;data={code:'42501',message:'PRIVATE DETAIL MUST NOT SHOW'};}
+ else if(scenario==='unavailable'){status=404;data={code:'PGRST202'};}
+ else if((scenario==='ready'||scenario==='slow')&&id===CUSTOMER)data={crm_customer_id:id,requests:[{request_no:'REQ-SYNTH-A',cargo_name:'Synthetic longan',request_status:'reviewing',created_at:'2026-09-05'}],orders:[{order_no:'ORDER-SYNTH-A',cargo_name:'<img src=x onerror=alert(1)>',status:'海运中',progress:50,eta:'2026-09-06',bank_account:'PRIVATE DETAIL MUST NOT SHOW',cost:999}],account:'PRIVATE DETAIL MUST NOT SHOW'};
+ document.getElementById('requestState').textContent='查询响应已返回';
+ return {ok:status===200,status,json:async()=>data};
+};
+</script><script src="../assets/r11/customer-linkage.js.txt"></script></html>

@@ -16,4 +16,5 @@ for(const match of assembled.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/
   new vm.Script(match[1],{filename:'assembled-script-'+(++scripts)});
 }
 if(!assembled.includes('data-fonkon-module="assets/r11/customer-linkage.js.txt"'))throw Error('Linkage consumer missing from actual loader');
-console.log(JSON.stringify({loader:'app-r11-1.html',compiledScripts:scripts,customerLinkageIncluded:true}));
+if(!assembled.includes('data-fonkon-module="assets/r11/staff-handoff.js.txt"'))throw Error('Staff handoff missing from actual loader');
+console.log(JSON.stringify({loader:'app-r11-1.html',compiledScripts:scripts,customerLinkageIncluded:true,staffHandoffIncluded:true}));

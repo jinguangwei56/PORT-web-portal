@@ -18,5 +18,5 @@ jobs:
           node-version: 24
       - name: Verify session isolation and assembled scripts
         run: |
-          node --test tests/customer-linkage.test.mjs
+          node --test tests/customer-linkage.test.mjs tests/staff-handoff.test.mjs
           node scripts/check-loader.mjs

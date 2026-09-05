@@ -1,0 +1,116 @@
+/* Staff administration stays in OPS; its MFA session is not copied to MARKET. */
+(function () {
+  'use strict';
+  if (window.__fonkonStaffHandoffInstalled) return;
+  window.__fonkonStaffHandoffInstalled = true;
+  const STAFF_URL = 'https://ops.fonkonsupply.com/zh/staff';
+  const LOGIN_URL = 'https://ops.fonkonsupply.com/zh/login';
+  const MOVED = new Set(['invite', 'admin_reset_password', 'approve_user', 'reject_user', 'set_user_active', 'register']);
+  const PASSWORD_RULE = '新密码须为 10–72 位，并包含大写字母、小写字母和数字，且不能与当前密码相同。';
+  const MANAGEMENT_NOTE = '此操作尚未执行。员工邀请、审批、停用与密码重置，请在 OPS 的“员工与权限”页面登录并完成双重认证后操作。';
+  function node(tag, text, className) {
+    const result = document.createElement(tag);
+    if (text !== undefined) result.textContent = text;
+    if (className) result.className = className;
+    return result;
+  }
+  function trustedLink(text, url) {
+    const link = node('a', text, 'btn btn-primary');
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    return link;
+  }
+  function managementContent(legacyInvite = false) {
+    const box = node('div', undefined, 'notice');
+    box.appendChild(node('p', legacyInvite ? '旧邀请码入口已停用，改用 OPS 发送员工邀请。当前没有执行旧邀请码撤销。' : MANAGEMENT_NOTE));
+    box.appendChild(node('p', '请直接在 OPS 完成操作。返回 MARKET 不会自动继续或提交该操作。', 'muted'));
+    box.appendChild(trustedLink('前往 OPS 员工与权限', STAFF_URL));
+    return box;
+  }
+  function handoff(legacyInvite = false) {
+    // Static modal shell only. No user IDs, tokens, return URLs or credentials
+    // are appended to either trusted destination.
+    modal('在 OPS 完成员工管理', '<div id="fonkon-staff-handoff"></div>');
+    document.getElementById('fonkon-staff-handoff')?.appendChild(managementContent(legacyInvite));
+  }
+  const oldEdge = window.edge;
+  window.edge = async function (body) {
+    if (MOVED.has(body?.action)) {
+      handoff();
+      throw Error('员工管理操作未执行，请前往 OPS 员工与权限完成。');
+    }
+    if (body?.action === 'complete_password_change') {
+      const password = body.new_password;
+      if (typeof password !== 'string' || password.length < 10 || password.length > 72 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) throw Error(PASSWORD_RULE);
+    }
+    // Preserve the existing password handler and all unrelated business actions.
+    return oldEdge.apply(this, arguments);
+  };
+  ['makeSalesInvite', 'adminResetPassword', 'approveSales', 'rejectSales', 'toggleSales', 'revokeInvite'].forEach(name => {
+    window[name] = async function () { handoff(name === 'revokeInvite'); };
+  });
+  function decorateTeam() {
+    const view = document.getElementById('view');
+    if (!view || profile?.role !== 'admin') return;
+    if (!document.getElementById('fonkon-staff-management-entry')) {
+      const entry = managementContent(); entry.id = 'fonkon-staff-management-entry';
+      view.prepend(entry);
+    }
+    const labels = {
+      makeSalesInvite: '前往 OPS 邀请员工', adminResetPassword: '前往 OPS 重置密码',
+      approveSales: '前往 OPS 审批', rejectSales: '前往 OPS 审核',
+      toggleSales: '前往 OPS 管理账号', revokeInvite: '前往 OPS 管理邀请'
+    };
+    Object.entries(labels).forEach(([name, label]) => {
+      view.querySelectorAll('button[onclick^="' + name + '("]').forEach(button => { button.textContent = label; });
+    });
+    const oldResult = document.getElementById('inviteResult');
+    if (oldResult) {
+      oldResult.replaceChildren(); oldResult.classList.add('hide');
+      const inviteCard = oldResult.closest?.('.card');
+      if (inviteCard) inviteCard.replaceChildren(node('h2', '员工邀请'), managementContent(true));
+    }
+    view.querySelectorAll('.kpi').forEach(card => {
+      const label = card.querySelector('.kpi-label');
+      if (label?.textContent === '有效邀请码') {
+        label.textContent = '员工邀请';
+        const value = card.querySelector('.kpi-value'), foot = card.querySelector('.kpi-foot');
+        if (value) value.textContent = 'OPS';
+        if (foot) foot.textContent = '统一发送公司邀请';
+      }
+    });
+    const resetHint = document.querySelector('#pwdAdminBox .hint');
+    if (resetHint) resetHint.textContent = '由 OPS 发起密码重置，MARKET 不生成或展示临时密码';
+  }
+  const oldTeamView = window.teamView;
+  window.teamView = async function () {
+    const result = await oldTeamView.apply(this, arguments);
+    decorateTeam();
+    return result;
+  };
+  const oldPasswordModal = window.passwordModal;
+  window.passwordModal = function () {
+    const result = oldPasswordModal.apply(this, arguments);
+    const form = document.getElementById('pwdForm');
+    if (form) {
+      form.querySelectorAll('input[name="password"],input[name="password2"]').forEach(input => {
+        input.minLength = 10; input.maxLength = 72;
+        input.pattern = '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{10,72}';
+        input.title = PASSWORD_RULE;
+      });
+      const hint = form.querySelector('.notice,.danger-note');
+      if (hint) hint.textContent = (arguments[0] ? '请先修改临时密码，再继续使用。' : '') + PASSWORD_RULE;
+    }
+    return result;
+  };
+  const registration = document.getElementById('registerForm');
+  if (registration) {
+    registration.querySelectorAll('input').forEach(input => { input.value = ''; });
+    registration.onsubmit = event => { event.preventDefault(); };
+    const explanation = node('p', '员工账号采用公司邀请开通。请联系管理员从 OPS 发送邀请，并通过企业邮箱中的邀请链接设置密码。这里不再提交邀请码或注册密码。', 'notice');
+    const login = node('button', '已有账号，返回 MARKET 登录', 'btn btn-primary');
+    login.type = 'button'; login.addEventListener('click', () => document.getElementById('tabLogin')?.click());
+    registration.replaceChildren(explanation, login, trustedLink('打开 OPS 登录', LOGIN_URL));
+  }
+  const registrationTab = document.getElementById('tabRegister');
+  if (registrationTab) registrationTab.textContent = '受邀加入';
+})();

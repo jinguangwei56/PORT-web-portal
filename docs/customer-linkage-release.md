@@ -4,7 +4,7 @@ Base repository: `jinguangwei56/PORT-web-portal`, branch `main`.
 Reviewed base commit: `faa20ec38303d1288cd9a22634a9ee9eb1c51fe4`.
 The tree contains no `AGENTS.md` or package/build configuration.
 
-The production patch has only two files:
+The customer-progress portion changes only two production files:
 
 - `app-r11-1.html`: bump the module cache version and append the new module after
   the current customer-detail/session implementations.
@@ -50,7 +50,9 @@ All 11 tests passed, including wrong-customer payload rejection, customer switch
 races, logout with a late response, user switch, cross-tab logout, plain-text XSS
 handling, response field suppression, forbidden and unavailable states. The
 loader check runs the actual loader assembly and compiles all 29 resulting
-scripts, confirming that the new consumer is included.
+scripts, confirming that the new consumer is included. The subsequent staff
+handoff module brings the assembled application to 30 scripts; see
+`docs/staff-handoff.md` for that separate change and its tests.
 
 Cloud browser verification of the local preview URL was blocked by the browser
 URL policy (`ERR_BLOCKED_BY_CLIENT`). No workaround was attempted; browser

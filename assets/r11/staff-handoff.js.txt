@@ -5,6 +5,7 @@
   window.__fonkonStaffHandoffInstalled = true;
   const STAFF_URL = 'https://ops.fonkonsupply.com/zh/staff';
   const LOGIN_URL = 'https://ops.fonkonsupply.com/zh/login';
+  const RECOVERY_URL = 'https://ops.fonkonsupply.com/zh/forgot-password';
   const MOVED = new Set(['invite', 'admin_reset_password', 'approve_user', 'reject_user', 'set_user_active', 'register']);
   const PASSWORD_RULE = '新密码须为 10–72 位，并包含大写字母、小写字母和数字，且不能与当前密码相同。';
   const MANAGEMENT_NOTE = '此操作尚未执行。员工邀请、审批、停用与密码重置，请在 OPS 的“员工与权限”页面登录并完成双重认证后操作。';
@@ -113,4 +114,53 @@
   }
   const registrationTab = document.getElementById('tabRegister');
   if (registrationTab) registrationTab.textContent = '受邀加入';
+
+  function recoveryContent() {
+    const content = node('div', undefined, 'notice');
+    content.appendChild(node('p', '密码找回已统一到 OPS。此处未发送重置邮件，也未修改密码。'));
+    content.appendChild(node('p', '请在 OPS 找回密码页填写企业邮箱，并使用新邮件中的链接完成重置。旧 MARKET 恢复链接不再在这里收集新密码。', 'muted'));
+    content.appendChild(trustedLink('前往 OPS 找回密码', RECOVERY_URL));
+    return content;
+  }
+  function recoveryHandoff() {
+    modal('在 OPS 找回员工密码', '<div id="fonkon-recovery-handoff"></div>');
+    document.getElementById('fonkon-recovery-handoff')?.appendChild(recoveryContent());
+  }
+  window.forgotPassword = function () { recoveryHandoff(); };
+  // Some legacy consumers retain this entry name; ignore all token arguments.
+  window.openRecoveryModal = function () { recoveryHandoff(); };
+  const forgotButton = document.getElementById('forgotPwd');
+  if (forgotButton) {
+    forgotButton.disabled = false;
+    forgotButton.textContent = '前往 OPS 找回密码';
+    // The old button stored the old function object; overriding the global alone
+    // would not replace that handler.
+    forgotButton.onclick = event => { event.preventDefault(); recoveryHandoff(); };
+  }
+  const existingRecoveryForm = document.getElementById('recoverForm');
+  if (existingRecoveryForm) {
+    existingRecoveryForm.querySelectorAll('input').forEach(input => { input.value = ''; });
+    existingRecoveryForm.onsubmit = event => { event.preventDefault(); recoveryHandoff(); };
+    existingRecoveryForm.replaceChildren(recoveryContent());
+  }
+  // Fail closed if a previously scheduled legacy closure has already created a
+  // recovery form. No direct Auth/user PUT can originate from that form.
+  document.addEventListener('submit', event => {
+    if (event.target?.id !== 'recoverForm') return;
+    event.preventDefault(); event.stopImmediatePropagation(); recoveryHandoff();
+  }, true);
+  let oldRecoveryStored = false;
+  try {
+    oldRecoveryStored = !!sessionStorage.getItem('fonkon_recovery_token');
+    sessionStorage.removeItem('fonkon_recovery_token');
+    sessionStorage.removeItem('fonkon_recovery_mail_after');
+  } catch { /* Storage availability must not restore the old recovery path. */ }
+  const recoveryQuery = new URLSearchParams(location.search).get('mode') === 'recovery';
+  const recoveryHash = /(?:^#|&)type=recovery(?:&|$)/.test(location.hash);
+  if (recoveryQuery || recoveryHash) {
+    // Strip only the identified legacy recovery URL. Never append its fragment
+    // or credentials to OPS, and leave ordinary MARKET sessions untouched.
+    history.replaceState(null, '', location.pathname);
+  }
+  if (oldRecoveryStored || recoveryQuery || recoveryHash || existingRecoveryForm) recoveryHandoff();
 })();

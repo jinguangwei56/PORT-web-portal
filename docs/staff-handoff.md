@@ -23,6 +23,19 @@ server policy: 10–72 characters with upper/lowercase letters and digits. Serve
 errors, including a password update whose profile synchronization remains
 pending, are preserved rather than changed into success messages.
 
+Password recovery also uses OPS. The verified `/zh/forgot-password` route sends
+the user through the OPS email callback and password-setting flow. The loader
+disables the old closed-over recovery timer and its mail countdown with exact,
+single-match patches. The handoff module replaces the old button's stored
+`onclick`, removes inputs and submission logic from any already-created
+`recoverForm`, and blocks late legacy recovery submissions in capture phase.
+It sends no recovery email and performs no direct Auth password write.
+
+Only the old recovery-specific storage keys are removed. An identified old
+recovery URL is cleared locally; no fragment, token or query is added to the
+fixed OPS destination. Ordinary MARKET login sessions and business state remain
+untouched. The normal logged-in password handler is retained.
+
 Verification:
 
 ```sh
@@ -30,8 +43,11 @@ node --test tests/customer-linkage.test.mjs tests/staff-handoff.test.mjs
 node scripts/check-loader.mjs
 ```
 
-All 17 module tests and the actual loader assembly/30-script compile passed.
+All 22 module tests and the actual loader assembly/30-script compile passed.
 Tests cover blocked legacy requests, no false success, fixed token-free links,
 registration input removal, preserved password errors and untouched customer
-handover. Hosted browser acceptance remains a deployment gate; the local cloud
+handover. Recovery tests use the actual old form function and stored button
+handler, verify late-submit interception, session-preserving cleanup and loader
+failure on missing or duplicate patch markers. Hosted browser acceptance
+remains a deployment gate; the local cloud
 browser preview URL is blocked by browser policy and was not bypassed.
